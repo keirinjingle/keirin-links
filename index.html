@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>もふメモ | keirin changelog memo</title>
-  <meta name="description" content="競輪メモをシンプルに。/でスマート補完、当日レース補完、Google Drive同期（任意）。" />
+  <meta name="description" content="競輪メモをシンプルに。/でスマート補完、当日レース補完、Google Drive連携（任意）。" />
   <!-- ▼ あなたの Client ID（.apps.googleusercontent.com で終わる） -->
   <meta name="mofu:google-client-id" content="451004577569-euhu5f661onevj9a0tlsfr9i4jntm6jm.apps.googleusercontent.com">
   <!-- ▼ 許可オリジン（※パスなし。必要に応じて追加） -->
@@ -14,7 +14,7 @@
 
   <style>
     :root{
-      /* やさしい地色（もふタイマー系の淡色に近いトーン。必要なら差し替えOK） */
+      /* やさしい地色（必要なら差し替えOK） */
       --bg:#fffaf3;
       --card:#fff;
       --fg:#111;
@@ -36,9 +36,8 @@
     .badge{display:inline-flex;align-items:center;gap:.35rem;padding:.2rem .5rem;border:1px solid var(--line);border-radius:999px;font-size:.8rem;background:var(--card)}
     .ok{color:var(--ok)} .ng{color:var(--ng)}
     .wrap{max-width:960px;margin:14px auto;padding:0 12px}
-    .hint{color:var(--muted);font-size:.90rem;margin:10px 0 12px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;line-height:1.6}
-    .hint ul{margin:.25rem 0 .25rem 1rem;padding:0}
-    .hint li{margin:.15rem 0}
+    .hint{color:var(--muted);font-size:.95rem;margin:10px 0 12px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;line-height:1.6}
+    .hint a{color:#2563eb;text-decoration:none}
     textarea{width:100%;min-height:120px;font-size:16px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--card)}
     .toolbar{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin:.4rem 0}
     .btn{appearance:none;border:1px solid var(--line);background:#fafafa;padding:.55rem .85rem;border-radius:.8rem;cursor:pointer;font-size:.95rem}
@@ -75,6 +74,8 @@
     .settings-menu .mi{padding:.55rem .8rem;cursor:pointer;border-bottom:1px solid #f1f5f9}
     .settings-menu .mi:last-child{border-bottom:none}
     .settings-menu .mi:hover{background:#f8fafc}
+    /* キャレット座標計算用ミラー */
+    #taMirror{position:absolute;left:-9999px;top:-9999px;white-space:pre-wrap;word-wrap:break-word;visibility:hidden}
   </style>
 </head>
 <body>
@@ -100,15 +101,10 @@
   </header>
 
   <main class="wrap">
-    <!-- ご指定の文言（そのまま） -->
+    <!-- 短縮ヒント（2行） -->
     <div class="hint">
-      <ul>
-        <li>「/」で補完を開きます（選手／当日レース／戦法／タグ）。</li>
-        <li>戦法は <b>#三分戦</b> のように「#」、タグは <b>+メモ</b> のように「+」で付けられます。</li>
-        <li>入力後［登録］ボタンで保存</li>
-        <li>データは端末に保存。Googleに接続すればDriveのApp Folderに同期でき、複数端末で共有できます。</li>
-        <li>気に入ったら、ぜひ寄付のご協力を。やる気が出ます！</li>
-      </ul>
+      <div>・「/」で補完を開きます（選手／当日レース／戦法／タグ）。</div>
+      <div>・使い方は <a href="https://keirinjingle.github.io/keirin-links/howto.html" target="_blank" rel="noopener">詳細な使い方はこちら</a></div>
     </div>
 
     <div class="toolbar">
@@ -116,7 +112,7 @@
       <button id="addBtn" class="btn btn-primary">登録</button>
     </div>
 
-    <div style="position:relative">
+    <div id="taWrap" style="position:relative">
       <textarea id="ta" placeholder="例）- 函館6R 先行注意 /あさい #三分戦 +展開"></textarea>
       <div id="dropdown" class="dropdown"></div>
     </div>
@@ -154,6 +150,9 @@
       </div>
     </form>
   </dialog>
+
+  <!-- キャレット座標計算用ミラー要素 -->
+  <pre id="taMirror"></pre>
 
 <script>
 /* =====================
@@ -281,10 +280,16 @@ function findCandidates(q){
   return items.slice(0,8);
 }
 
+/* =====================
+   [dropdown placement: ハイブリッド方式]
+===================== */
+const dropdown = document.getElementById('dropdown');
+const ta = document.getElementById('ta');
+const taMirror = document.getElementById('taMirror');
+
 function renderDropdown(items){
-  const dd = document.getElementById('dropdown');
-  if(!items.length){ dd.style.display='none'; return; }
-  dd.innerHTML = items.map((it,i)=>{
+  if(!items.length){ dropdown.style.display='none'; return; }
+  dropdown.innerHTML = items.map((it,i)=>{
     if(it.type==='rider'){
       const r=it.r; const right = r.region ? `${r.region}／${r.ki}` : r.ki;
       return `<div class="item" data-i="${i}" data-rider-id="${r.id}"><span class="type">選手</span> @${r.name}（${right}）</div>`;
@@ -293,30 +298,124 @@ function renderDropdown(items){
     if(it.type==='tactic'){ return `<div class="item" data-i="${i}"><span class="type">戦法</span> #${it.t}</div>`; }
     return `<div class="item" data-i="${i}"><span class="type">タグ</span> +${it.tag}</div>`;
   }).join('');
-  const ta = document.getElementById('ta');
+  dropdown.style.display='block';
+  placeDropdownImmediate();        // ①まずは“欄の直下”に即配置
+  queueCaretAdjust();              // ②すぐ後に“キャレット直下”へ微調整
+}
+
+/* --- ① 即配置: visualViewport を考慮して textarea の直下へ --- */
+function placeDropdownImmediate(){
   const rect = ta.getBoundingClientRect();
-  // 入力欄のすぐ下に表示（スクロールを考慮）
-  dd.style.left = Math.round(rect.left + 12 + window.scrollX) + 'px';
-  dd.style.top  = Math.round(rect.top  + 8 + ta.clientHeight + window.scrollY) + 'px';
-  dd.style.display='block';
+  const vv = window.visualViewport;
+  const offsetTop = vv ? vv.offsetTop : window.scrollY;
+  const offsetLeft = vv ? vv.offsetLeft : window.scrollX;
+  let left = Math.round(rect.left + 12 + offsetLeft);
+  let top  = Math.round(rect.bottom + 8 + offsetTop);
+
+  // 画面外なら上フリップ + 幅内にクランプ
+  const ddRect = dropdown.getBoundingClientRect();
+  const vvH = vv ? vv.height : window.innerHeight;
+  const vvW = vv ? vv.width  : window.innerWidth;
+  if(top + ddRect.height > offsetTop + vvH - 8){
+    top = Math.round(rect.top - ddRect.height - 8 + offsetTop);
+  }
+  left = Math.max(8 + offsetLeft, Math.min(left, offsetLeft + vvW - ddRect.width - 8));
+
+  dropdown.style.left = left + 'px';
+  dropdown.style.top  = top  + 'px';
+}
+
+/* --- ② 精密配置: キャレット位置ミラー方式で“直下”へ --- */
+let caretAdjustTimer=null;
+function queueCaretAdjust(){
+  clearTimeout(caretAdjustTimer);
+  caretAdjustTimer = setTimeout(placeDropdownAtCaret, 40); // 1フレーム待って描画後に
+}
+
+function syncMirrorStyle(){
+  const cs = getComputedStyle(ta);
+  const props = [
+    'fontFamily','fontSize','fontWeight','fontStyle','letterSpacing','textTransform',
+    'textAlign','lineHeight','paddingTop','paddingRight','paddingBottom','paddingLeft',
+    'borderTopWidth','borderRightWidth','borderBottomWidth','borderLeftWidth','boxSizing'
+  ];
+  props.forEach(p=> taMirror.style[p] = cs[p]);
+  taMirror.style.width = ta.clientWidth + 'px';
+}
+
+function escapeHtml(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function toMirrorHtml(value, caret){
+  const before = value.slice(0, caret);
+  const after  = value.slice(caret);
+  return escapeHtml(before)
+    .replace(/\n$/g, '\n\u200b')    // 行末で位置が詰まらないよう幅0スペース
+    .replace(/\n/g, '<br/>') +
+    '<span id="__caret__">\u200b</span>' +
+    escapeHtml(after).replace(/\n/g,'<br/>');
+}
+
+function getCaretViewportPos(){
+  syncMirrorStyle();
+  taMirror.innerHTML = toMirrorHtml(ta.value, ta.selectionStart);
+  const caret = taMirror.querySelector('#__caret__');
+  if(!caret) return null;
+  const cRect = caret.getBoundingClientRect();
+  const tRect = ta.getBoundingClientRect();
+  const vv = window.visualViewport;
+  const offsetTop = vv ? vv.offsetTop : window.scrollY;
+  const offsetLeft = vv ? vv.offsetLeft : window.scrollX;
+
+  // caret を textarea の左上基点からの相対 -> ビューポート座標へ
+  const left = Math.round(tRect.left + (cRect.left - taMirror.getBoundingClientRect().left) + offsetLeft);
+  const top  = Math.round(tRect.top  + (cRect.top  - taMirror.getBoundingClientRect().top ) + offsetTop);
+  return {left, top};
+}
+
+function placeDropdownAtCaret(){
+  if(dropdown.style.display!=='block') return;
+  const pos = getCaretViewportPos();
+  if(!pos){ placeDropdownImmediate(); return; }
+
+  const vv = window.visualViewport;
+  const offsetTop = vv ? vv.offsetTop : window.scrollY;
+  const offsetLeft = vv ? vv.offsetLeft : window.scrollX;
+  const vvH = vv ? vv.height : window.innerHeight;
+  const vvW = vv ? vv.width  : window.innerWidth;
+
+  let left = pos.left + 0; // 少し右に寄せたい場合は + 数px
+  let top  = pos.top  + 22; // キャレット下にオフセット
+
+  const ddRect = dropdown.getBoundingClientRect();
+  if(top + ddRect.height > offsetTop + vvH - 8){
+    top = pos.top - ddRect.height - 8; // 上フリップ
+  }
+  left = Math.max(8 + offsetLeft, Math.min(left, offsetLeft + vvW - ddRect.width - 8));
+
+  dropdown.style.left = left + 'px';
+  dropdown.style.top  = top  + 'px';
+}
+
+/* viewport 変化でも再配置（URLバー出入り、回転、ズーム） */
+if(window.visualViewport){
+  visualViewport.addEventListener('resize', ()=>{ if(dropdown.style.display==='block') { placeDropdownImmediate(); queueCaretAdjust(); }});
+  visualViewport.addEventListener('scroll', ()=>{ if(dropdown.style.display==='block') { placeDropdownImmediate(); queueCaretAdjust(); }});
 }
 
 function commitDropdown(idx){
   if(!curItems.length) return;
   const it = curItems[idx];
-  const ta = document.getElementById('ta');
-  const tok = getSlashToken(ta.value, ta.selectionStart); if(!tok) return;
   let ins='';
   if(it.type==='rider'){
     const r = it.r; const right = r.region ? `${r.region}／${r.ki}` : r.ki; ins = `@${r.name}（${right}）`;
   } else if(it.type==='race'){ ins = `- ${it.v.venue}${it.r.race_number}R`;
   } else if(it.type==='tactic'){ ins = `#${it.t}`;
   } else if(it.type==='tag'){ ins = `+${it.tag}`; }
+  const tok = getSlashToken(ta.value, ta.selectionStart); if(!tok) return;
   const before = ta.value.slice(0, tok.start);
   const after  = ta.value.slice(tok.end);
   ta.value = before + ins + after;
   const caret = (before + ins).length; ta.setSelectionRange(caret, caret);
-  document.getElementById('dropdown').style.display='none';
+  dropdown.style.display='none';
   scheduleDraftSave();
 }
 
@@ -413,22 +512,26 @@ function renderList(){
 /* =====================
    [input handlers]
 ===================== */
-const ta = document.getElementById('ta');
 let composing = false;
+function updateDropdown(){
+  const tok = getSlashToken(ta.value, ta.selectionStart);
+  if(!tok){ dropdown.style.display='none'; return; }
+  curItems = findCandidates(tok.token);
+  renderDropdown(curItems);
+}
 ta.addEventListener('compositionstart', ()=>{ composing = true; });
 ta.addEventListener('compositionend', ()=>{ composing = false; updateDropdown(); });
-ta.addEventListener('input', ()=>{ updateDropdown(); scheduleDraftSave(); });
+ta.addEventListener('input', ()=>{ updateDropdown(); scheduleDraftSave(); queueCaretAdjust(); });
 ta.addEventListener('keyup', (e)=>{ if (e.key === '/' && !composing) updateDropdown(); });
 ta.addEventListener('keydown', (e)=>{
-  const dd = document.getElementById('dropdown');
   if(e.key==='Enter' && !e.shiftKey){
     if (e.isComposing || composing) return;
-    if(dd.style.display==='block' && curItems.length){ commitDropdown(0); e.preventDefault(); }
+    if(dropdown.style.display==='block' && curItems.length){ commitDropdown(0); e.preventDefault(); }
     return;
   }
-  if(e.key==='Escape'){ dd.style.display='none'; }
+  if(e.key==='Escape'){ dropdown.style.display='none'; }
 });
-document.getElementById('dropdown').addEventListener('mousedown', (e)=>{
+dropdown.addEventListener('mousedown', (e)=>{
   const node = e.target.closest('.item'); if(!node) return; commitDropdown(parseInt(node.dataset.i,10)); e.preventDefault();
 });
 document.getElementById('inlineSlash').addEventListener('click', ()=>{ ta.focus(); const st=ta.selectionStart; ta.setRangeText('/', st, st, 'end'); updateDropdown(); });
@@ -605,7 +708,7 @@ document.getElementById('editSaveBtn').addEventListener('click', (e)=>{
 });
 
 /* =====================
-   [Google Login + Drive App Folder 同期]
+   [Google Login]
 ===================== */
 let tokenClient=null, accessToken=null;
 const SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
@@ -616,7 +719,7 @@ async function ensureGisReady(){
     return false;
   }
   if(!ORIGIN_ALLOWED){
-    alert('このオリジンではDrive同期を無効化しています。'); return false;
+    alert('このオリジンではDrive連携を無効化しています。'); return false;
   }
   if(!tokenClient){
     tokenClient = google.accounts.oauth2.initTokenClient({
@@ -626,7 +729,7 @@ async function ensureGisReady(){
         if(resp.error){ console.error(resp); alert('Google接続に失敗しました'); return; }
         accessToken = resp.access_token;
         localStorage.setItem(KEY_USER, JSON.stringify({ hasToken:true, ts:Date.now() }));
-        alert('Googleに接続しました（App Folder 同期が有効）');
+        alert('Googleに接続しました（App Folder 連携の準備OK）');
       }
     });
   }
@@ -647,12 +750,7 @@ document.getElementById('logoutBtn').addEventListener('click', ()=>{
 /* =====================
    [init]
 ===================== */
-function updateDropdown(){
-  const tok = getSlashToken(ta.value, ta.selectionStart);
-  if(!tok){ document.getElementById('dropdown').style.display='none'; return; }
-  curItems = findCandidates(tok.token);
-  renderDropdown(curItems);
-}
+function updateDropdownTrigger(){ const tok = getSlashToken(ta.value, ta.selectionStart); if(!tok){ dropdown.style.display='none'; return; } curItems = findCandidates(tok.token); renderDropdown(curItems); }
 
 (async function init(){
   restoreDraft();
