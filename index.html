@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>もふメモ | MVP-Lite</title>
-<meta name="description" content="競輪メモの最小構成。ローカル保存＋/サジェスト＋素朴検索。" />
+<title>もふメモ | MVP-Lite + Riders/Races</title>
+<meta name="description" content="競輪メモ。ローカル保存＋/サジェスト（戦法・選手・レース・タグ）＋素朴検索。" />
 <style>
   :root{
     --bg:#fffaf3; --card:#fff; --fg:#111; --muted:#6b7280; --line:#e5e7eb;
@@ -47,19 +47,25 @@
   dialog{border:none;border-radius:12px;max-width:720px;width:96%;}
   dialog::backdrop{background:rgba(0,0,0,.25)}
   .hl{background:var(--hl);font-weight:700}
+
+  /* ステータスバッジ（任意表示用） */
+  .badge{display:inline-flex;align-items:center;gap:.35rem;padding:.2rem .5rem;border:1px solid var(--line);border-radius:999px;font-size:.8rem;background:var(--card)}
+  .ok{color:#10b981} .ng{color:#ef4444}
 </style>
 </head>
 <body>
 <header>
   <div class="bar">
-    <div class="title">もふメモ（MVP-Lite）</div>
+    <div class="title">もふメモ</div>
+    <span id="riderStatus" class="badge">選手DB <span class="mark">…</span></span>
+    <span id="raceStatus" class="badge">レース情報 <span class="mark">…</span></span>
     <button id="openSearch" class="btn" title="Ctrl/Cmd+K でも開けます">検索</button>
   </div>
 </header>
 
 <main class="wrap">
   <div class="hint">
-    <div>・「/」で補完を開きます（戦法／@任意の選手名／+任意タグ）。</div>
+    <div>・「/」で補完を開きます（戦法／@選手／当日レース／+タグ）。</div>
     <div>・まずはローカル保存のみ。安定後に外部連携等を段階追加。</div>
   </div>
 
@@ -101,12 +107,79 @@ const KEY_ENTRIES = 'mofu:entries:mvp1';
 let composing=false, imeJustEnded=false, ddSel=-1, curItems=[], lastCaret=0;
 const IME_SUPPRESS_MS=200;
 
+const riderStatus = document.getElementById('riderStatus');
+const raceStatus  = document.getElementById('raceStatus');
+function setStatus(el, ok, msg){
+  const mark = el.querySelector('.mark');
+  mark.textContent = ok ? '✅' : `✖${msg?`(${msg})`:''}`;
+  el.classList.toggle('ok', !!ok);
+  el.classList.toggle('ng', !ok);
+}
+
+/* ====== 外部データ（選手DB・当日レース） ====== */
+const RIDERS_URL = 'https://keirinjingle.github.io/keirin-links/senshuID.json';
+const RACES_URL  = (ymd) => `https://keirinjingle.github.io/date/keirin_race_list_${ymd}.json`;
+
+let RIDERS = [];   // {id,name,region,ki,grade,profile}
+let DAYCARDS = []; // [{venue, races:[{race_number, url, ...}]}]
+
+// JST日付（YYYYMMDD）
+const ymdJST = () => {
+  const d = new Date();
+  const tzAdj = d.getTimezoneOffset() * 60000;
+  return new Date(d.getTime() - tzAdj).toISOString().slice(0,10).replace(/-/g,'');
+};
+
 /* ====== ローカル入出力 ====== */
 const loadEntries=()=>JSON.parse(localStorage.getItem(KEY_ENTRIES)||'[]');
 const saveEntries=(a)=>localStorage.setItem(KEY_ENTRIES, JSON.stringify(a));
 
-/* ====== サジェスト（シンプル） ====== */
+/* ====== 選手・レース取得 ====== */
+function extractKi(kiText){ const m=(kiText||'').match(/(\d+)期/); return m ? `${m[1]}期` : (kiText||''); }
+
+async function fetchRiders(){
+  try{
+    const res = await fetch(RIDERS_URL, { cache:'no-cache' });
+    if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    const raw = await res.text();
+    let arr;
+    try{ arr = JSON.parse(raw); } catch{ throw new Error('JSON parse error'); }
+    RIDERS = arr.map(r=>({
+      id: String(r['登録番号']||'').trim(),
+      name: r['選手名'],
+      ki: extractKi(r['期']),
+      region: r['地域']||'',
+      grade: r['級']||'',
+      profile: (r['プロフィールURL']||'').replace('https://keirin.netkeiba.comhttps://','https://')
+    }));
+    setStatus(riderStatus, true);
+  }catch(e){
+    console.warn('選手DB取得失敗:', e);
+    RIDERS = [];
+    setStatus(riderStatus, false, e.message||'fetch error');
+  }
+}
+
+async function fetchRaces(){
+  try{
+    const url = RACES_URL(ymdJST());
+    const res = await fetch(url, { cache:'no-cache' });
+    if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    const raw = await res.text();
+    let data;
+    try{ data = JSON.parse(raw); } catch{ throw new Error('JSON parse error'); }
+    DAYCARDS = Array.isArray(data) ? data : [];
+    setStatus(raceStatus, true);
+  }catch(e){
+    console.warn('当日レース取得失敗:', e);
+    DAYCARDS = [];
+    setStatus(raceStatus, false, e.message||'fetch error');
+  }
+}
+
+/* ====== サジェスト（戦法・選手・レース・タグ） ====== */
 const TACTICS = ['三分戦','二分戦','単騎','先行一車','まくり','差し','カマシ','自在'];
+
 function getSlashToken(text, caret){
   const m = text.slice(0, caret).match(/(^|\s)\/(\S*)$/);
   if (!m) return null;
@@ -117,23 +190,63 @@ function norm(s){ return (s||'').toLowerCase(); }
 function findCandidates(q){
   const items=[];
   const n = norm(q||'');
+  const wantFallback = !q || !q.trim();
+  const hasDigit = /[0-9０-９]/.test(q||'');
 
-  // 1) 戦法（デフォルト常時）
+  // 0) 戦法（常に提示）
   const ts = q ? TACTICS.filter(t=>norm(t).includes(n)) : TACTICS;
   items.push(...ts.map(t=>({type:'tactic', t})));
 
-  // 2) 任意の選手・タグ（入力があれば）
-  if (q){
-    items.push({type:'rider', name:q});  // 「@ + 任意文字列」を候補化
-    items.push({type:'tag', tag:q});     // 「+ + 任意文字列」を候補化
+  // 1) 選手（DBがあれば最優先）
+  if (RIDERS.length && q){
+    const list = RIDERS
+      .filter(r => (`${r.name} ${r.region} ${r.ki}`).toLowerCase().includes(n))
+      .slice(0, 6);
+    items.push(...list.map(r => ({ type:'riderDb', r })));
+  } else if (q){
+    // DBが無いときは自由入力の@候補
+    items.push({type:'rider', name:q});
   }
-  return items.slice(0,8);
+
+  // 2) レース（当日データがあれば）
+  if (DAYCARDS.length && (wantFallback || hasDigit || (q && DAYCARDS.some(v=> norm(v.venue).includes(n) || n.includes(norm(v.venue)))))){
+    const lower = n;
+    let pushed = 0;
+    outer: for (const v of DAYCARDS){
+      const matchVenue = !q || norm(v.venue).includes(lower) || lower.includes(norm(v.venue));
+      if (!matchVenue && !hasDigit) continue;
+      for (const rr of v.races){
+        let pass=true;
+        if (hasDigit){
+          const m = lower.match(/(\d{1,2})$/);
+          if (m){ const no=parseInt(m[1],10); pass = (rr.race_number===no); }
+        }
+        if (pass){
+          items.push({ type:'race', v, r: rr });
+          pushed++;
+          if (pushed>=8) break outer;
+        }
+      }
+    }
+  }
+
+  // 3) タグ（自由入力）
+  if (q) items.push({type:'tag', tag:q});
+
+  return items.slice(0, 8);
 }
 
 function renderDropdown(items){
   if (!items.length){ dropdown.style.display='none'; ddSel=-1; return; }
   dropdown.innerHTML = items.map((it,i)=>{
     if (it.type==='tactic') return `<div class="item" data-i="${i}"><span class="type">戦法</span> #${it.t}</div>`;
+    if (it.type==='riderDb'){
+      const r=it.r; const right = r.region ? `${r.region}／${r.ki}` : r.ki;
+      return `<div class="item" data-i="${i}"><span class="type">選手</span> @${r.name}（${right}）</div>`;
+    }
+    if (it.type==='race'){
+      return `<div class="item" data-i="${i}"><span class="type">レース</span> - ${it.v.venue}${it.r.race_number}R</div>`;
+    }
     if (it.type==='rider')  return `<div class="item" data-i="${i}"><span class="type">選手</span> @${it.name}</div>`;
     return `<div class="item" data-i="${i}"><span class="type">タグ</span> +${it.tag}</div>`;
   }).join('');
@@ -142,14 +255,7 @@ function renderDropdown(items){
   dropdown.scrollTop=0;
 }
 
-function updateDropdown(){
-  const tok=getSlashToken(ta.value, lastCaret);
-  if (!tok){ dropdown.style.display='none'; return; }
-  curItems=findCandidates(tok.token);
-  renderDropdown(curItems);
-}
-
-/* ====== ドロップダウンUI（固定位置／IME安全） ====== */
+/* ====== ドロップダウン操作（IME安全・固定配置） ====== */
 function highlightSelection(){
   const nodes=dropdown.querySelectorAll('.item');
   nodes.forEach((n,i)=>n.classList.toggle('is-active', i===ddSel));
@@ -171,6 +277,8 @@ function commitDropdown(idx){
 
   let insert='';
   if(it.type==='tactic') insert = '#'+it.t;
+  else if(it.type==='riderDb') insert = '@'+it.r.name;
+  else if(it.type==='race') insert = `- ${it.v.venue}${it.r.race_number}R`;
   else if(it.type==='rider') insert = '@'+it.name;
   else insert = '+'+it.tag;
 
@@ -251,7 +359,7 @@ document.getElementById('inlineSlash').addEventListener('click', ()=>{
   lastCaret=ta.selectionStart; updateDropdown();
 });
 
-/* ====== メモのCRUD（極シンプル：保存時はrawのみ） ====== */
+/* ====== メモのCRUD（rawのみ保存） ====== */
 function addEntry(raw){
   const entry={ id: Date.now().toString(36)+Math.random().toString(16).slice(2), at:new Date().toISOString(), raw };
   const arr=loadEntries(); arr.push(entry); saveEntries(arr); renderList();
@@ -367,6 +475,25 @@ function runSearch(){
     const node=document.getElementById('card_'+id);
     if(node){ node.scrollIntoView({behavior:'smooth', block:'center'}); }
   };
+}
+
+/* ====== 初期化：外部データ並行取得（失敗しても継続） ====== */
+(async () => {
+  setStatus(riderStatus, false, '…');
+  setStatus(raceStatus,  false, '…');
+  renderList();
+  await Promise.allSettled([ fetchRiders(), fetchRaces() ]);
+  // 入力中なら候補を最新化
+  lastCaret = ta.selectionStart;
+  updateDropdown();
+})();
+
+/* ====== サジェスト更新トリガ ====== */
+function updateDropdown(){
+  const tok=getSlashToken(ta.value, lastCaret);
+  if (!tok){ dropdown.style.display='none'; return; }
+  curItems=findCandidates(tok.token);
+  renderDropdown(curItems);
 }
 </script>
 </body>
