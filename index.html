@@ -14,8 +14,7 @@
 
   <style>
     :root{
-      /* やさしい地色（必要なら差し替えOK） */
-      --bg:#fffaf3;
+      --bg:#fffaf3;          /* やさしい地色（必要なら差し替えOK） */
       --card:#fff;
       --fg:#111;
       --muted:#6b7280;
@@ -57,7 +56,13 @@
     .raw{white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.95rem}
     .footer{color:var(--muted);font-size:.85rem;text-align:center;padding:20px 8px}
     .banner{margin-top:8px;padding:.6rem .8rem;border:1px solid var(--line);border-radius:10px;background:#fff7ed;color:#9a3412;font-size:.85rem}
-    .dropdown{position:absolute;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 24px rgba(0,0,0,.08);display:none;max-height:260px;overflow:auto;min-width:280px; z-index:1000}
+    .dropdown{
+      position:absolute;background:var(--card);border:1px solid var(--line);border-radius:12px;
+      box-shadow:0 10px 24px rgba(0,0,0,.08);display:none;overflow:auto;min-width:280px;z-index:1000;
+      /* 画面下インジケータの安全余白を確保 */
+      padding-bottom:max(8px, env(safe-area-inset-bottom));
+      max-height:260px; /* 初期値。JSで動的に狭めます */
+    }
     .item{padding:.55rem .7rem;cursor:pointer;font-size:.95rem;display:flex;gap:.5rem;align-items:center}
     .item:hover{background:#f3f4f6}
     .type{font-size:.7rem;color:#fff;background:#9ca3af;border-radius:999px;padding:0 .4rem}
@@ -300,29 +305,52 @@ function renderDropdown(items){
   }).join('');
   dropdown.style.display='block';
   placeDropdownImmediate();        // ①まずは“欄の直下”に即配置
-  queueCaretAdjust();              // ②すぐ後に“キャレット直下”へ微調整
+  queueCaretAdjust();              // ②少し後に“キャレット直下”へ微調整
+}
+
+/* --- 位置＋高さの最終決定（下/上の空きに応じてフリップ＆max-height調整） --- */
+function placeAndSizeDropdown(preferredLeft, preferredTop, anchorRect){
+  const dd = dropdown;
+  const vv = window.visualViewport;
+  const offsetTop  = vv ? vv.offsetTop  : window.scrollY;
+  const offsetLeft = vv ? vv.offsetLeft : window.scrollX;
+  const vvH = vv ? vv.height : window.innerHeight;
+  const vvW = vv ? vv.width  : window.innerWidth;
+
+  const anchorBottom = anchorRect.bottom + offsetTop;
+  const anchorTop    = anchorRect.top    + offsetTop;
+  const spaceBelow = (offsetTop + vvH) - anchorBottom - 8;
+  const spaceAbove = anchorTop - offsetTop - 8;
+
+  let left = Math.max(8 + offsetLeft, Math.min(preferredLeft, offsetLeft + vvW - dd.offsetWidth - 8));
+  let top  = preferredTop;
+
+  // 下に収まらない→上に出す。どちらでも足りない場合はmax-heightで縮める
+  if (spaceBelow < dd.offsetHeight) {
+    const maxH = Math.max(120, spaceAbove);      // 最低120pxは確保
+    dd.style.maxHeight = Math.floor(maxH) + 'px';
+    top = Math.round(anchorRect.top + offsetTop - dd.offsetHeight - 8);
+    if (top < offsetTop + 8) top = Math.round(offsetTop + 8);
+  } else {
+    dd.style.maxHeight = Math.floor(Math.max(160, spaceBelow)) + 'px';
+  }
+
+  left = Math.max(8 + offsetLeft, Math.min(left, offsetLeft + vvW - dd.offsetWidth - 8));
+  dd.style.left = left + 'px';
+  dd.style.top  = top  + 'px';
 }
 
 /* --- ① 即配置: visualViewport を考慮して textarea の直下へ --- */
 function placeDropdownImmediate(){
   const rect = ta.getBoundingClientRect();
   const vv = window.visualViewport;
-  const offsetTop = vv ? vv.offsetTop : window.scrollY;
+  const offsetTop  = vv ? vv.offsetTop  : window.scrollY;
   const offsetLeft = vv ? vv.offsetLeft : window.scrollX;
-  let left = Math.round(rect.left + 12 + offsetLeft);
-  let top  = Math.round(rect.bottom + 8 + offsetTop);
 
-  // 画面外なら上フリップ + 幅内にクランプ
-  const ddRect = dropdown.getBoundingClientRect();
-  const vvH = vv ? vv.height : window.innerHeight;
-  const vvW = vv ? vv.width  : window.innerWidth;
-  if(top + ddRect.height > offsetTop + vvH - 8){
-    top = Math.round(rect.top - ddRect.height - 8 + offsetTop);
-  }
-  left = Math.max(8 + offsetLeft, Math.min(left, offsetLeft + vvW - ddRect.width - 8));
+  const preferredLeft = Math.round(rect.left + 12 + offsetLeft);
+  const preferredTop  = Math.round(rect.bottom + 8 + offsetTop);
 
-  dropdown.style.left = left + 'px';
-  dropdown.style.top  = top  + 'px';
+  placeAndSizeDropdown(preferredLeft, preferredTop, rect);
 }
 
 /* --- ② 精密配置: キャレット位置ミラー方式で“直下”へ --- */
@@ -342,18 +370,16 @@ function syncMirrorStyle(){
   props.forEach(p=> taMirror.style[p] = cs[p]);
   taMirror.style.width = ta.clientWidth + 'px';
 }
-
 function escapeHtml(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function toMirrorHtml(value, caret){
   const before = value.slice(0, caret);
   const after  = value.slice(caret);
   return escapeHtml(before)
-    .replace(/\n$/g, '\n\u200b')    // 行末で位置が詰まらないよう幅0スペース
+    .replace(/\n$/g, '\n\u200b')
     .replace(/\n/g, '<br/>') +
     '<span id="__caret__">\u200b</span>' +
     escapeHtml(after).replace(/\n/g,'<br/>');
 }
-
 function getCaretViewportPos(){
   syncMirrorStyle();
   taMirror.innerHTML = toMirrorHtml(ta.value, ta.selectionStart);
@@ -365,58 +391,26 @@ function getCaretViewportPos(){
   const offsetTop = vv ? vv.offsetTop : window.scrollY;
   const offsetLeft = vv ? vv.offsetLeft : window.scrollX;
 
-  // caret を textarea の左上基点からの相対 -> ビューポート座標へ
   const left = Math.round(tRect.left + (cRect.left - taMirror.getBoundingClientRect().left) + offsetLeft);
   const top  = Math.round(tRect.top  + (cRect.top  - taMirror.getBoundingClientRect().top ) + offsetTop);
   return {left, top};
 }
-
 function placeDropdownAtCaret(){
   if(dropdown.style.display!=='block') return;
   const pos = getCaretViewportPos();
   if(!pos){ placeDropdownImmediate(); return; }
 
-  const vv = window.visualViewport;
-  const offsetTop = vv ? vv.offsetTop : window.scrollY;
-  const offsetLeft = vv ? vv.offsetLeft : window.scrollX;
-  const vvH = vv ? vv.height : window.innerHeight;
-  const vvW = vv ? vv.width  : window.innerWidth;
+  const preferredLeft = pos.left + 0;
+  const preferredTop  = pos.top  + 22;
 
-  let left = pos.left + 0; // 少し右に寄せたい場合は + 数px
-  let top  = pos.top  + 22; // キャレット下にオフセット
-
-  const ddRect = dropdown.getBoundingClientRect();
-  if(top + ddRect.height > offsetTop + vvH - 8){
-    top = pos.top - ddRect.height - 8; // 上フリップ
-  }
-  left = Math.max(8 + offsetLeft, Math.min(left, offsetLeft + vvW - ddRect.width - 8));
-
-  dropdown.style.left = left + 'px';
-  dropdown.style.top  = top  + 'px';
+  const tRect = ta.getBoundingClientRect();
+  placeAndSizeDropdown(preferredLeft, preferredTop, tRect);
 }
 
 /* viewport 変化でも再配置（URLバー出入り、回転、ズーム） */
 if(window.visualViewport){
   visualViewport.addEventListener('resize', ()=>{ if(dropdown.style.display==='block') { placeDropdownImmediate(); queueCaretAdjust(); }});
   visualViewport.addEventListener('scroll', ()=>{ if(dropdown.style.display==='block') { placeDropdownImmediate(); queueCaretAdjust(); }});
-}
-
-function commitDropdown(idx){
-  if(!curItems.length) return;
-  const it = curItems[idx];
-  let ins='';
-  if(it.type==='rider'){
-    const r = it.r; const right = r.region ? `${r.region}／${r.ki}` : r.ki; ins = `@${r.name}（${right}）`;
-  } else if(it.type==='race'){ ins = `- ${it.v.venue}${it.r.race_number}R`;
-  } else if(it.type==='tactic'){ ins = `#${it.t}`;
-  } else if(it.type==='tag'){ ins = `+${it.tag}`; }
-  const tok = getSlashToken(ta.value, ta.selectionStart); if(!tok) return;
-  const before = ta.value.slice(0, tok.start);
-  const after  = ta.value.slice(tok.end);
-  ta.value = before + ins + after;
-  const caret = (before + ins).length; ta.setSelectionRange(caret, caret);
-  dropdown.style.display='none';
-  scheduleDraftSave();
 }
 
 /* =====================
@@ -434,7 +428,6 @@ function raceFromRaw(raw){
   }
   return { date: ymd_dash(), venue, raceNo, links: resultUrl? {result: resultUrl, entry: entryUrl} : null };
 }
-
 function parseEntities(raw){
   const race = raceFromRaw(raw);
   const riders = Array.from(raw.matchAll(/@([^\s@#\+（）()]+)(?:（[^）]*）)?/g)).map(m=>({name:m[1]}));
@@ -442,7 +435,6 @@ function parseEntities(raw){
   const tags = Array.from(raw.matchAll(/\+("[^"]+"|\S+)/g)).map(m=> m[1].replace(/^"|"$/g,''));
   return {race, riders, tactics, tags};
 }
-
 function resolveRiderIds(riders){
   return riders.map(x=>{
     if(x.id) return x;
@@ -451,14 +443,12 @@ function resolveRiderIds(riders){
     return {...x};
   });
 }
-
 function addEntry(raw){
   const entry = { id: ulid(), at: new Date().toISOString(), raw, ...parseEntities(raw) };
   entry.riders = resolveRiderIds(entry.riders);
   const arr = loadEntries(); arr.push(entry); saveEntries(arr); clearDraft();
   renderList();
 }
-
 function updateEntry(id, newRaw){
   const arr = loadEntries();
   const idx = arr.findIndex(e=>e.id===id);
@@ -469,13 +459,11 @@ function updateEntry(id, newRaw){
   saveEntries(arr);
   renderList();
 }
-
 function deleteEntry(id){
   const arr = loadEntries().filter(e=> e.id!==id);
   saveEntries(arr);
   renderList();
 }
-
 function linkifyRaw(html){
   html = html.replace(/@([^\s@#\+（）()]+)([^@#\+\n]*)/g, (m, n, rest)=>{
     const rr = RIDERS.find(r=> r.name===n);
@@ -534,7 +522,19 @@ ta.addEventListener('keydown', (e)=>{
 dropdown.addEventListener('mousedown', (e)=>{
   const node = e.target.closest('.item'); if(!node) return; commitDropdown(parseInt(node.dataset.i,10)); e.preventDefault();
 });
-document.getElementById('inlineSlash').addEventListener('click', ()=>{ ta.focus(); const st=ta.selectionStart; ta.setRangeText('/', st, st, 'end'); updateDropdown(); });
+document.getElementById('inlineSlash').addEventListener('click', ()=>{
+  ta.focus(); const st=ta.selectionStart; ta.setRangeText('/', st, st, 'end'); updateDropdown();
+});
+
+/* ▼［登録］ボタンのクリックハンドラ（追加済み） */
+document.getElementById('addBtn').addEventListener('click', ()=>{
+  const raw = ta.value.trim();
+  if(!raw){ alert('テキストが空です'); return; }
+  addEntry(raw);            // 保存
+  ta.value = '';            // 入力欄クリア
+  dropdown.style.display='none'; // 補完を閉じる
+  renderList();             // リスト再描画
+});
 
 let draftTimer=null;
 function scheduleDraftSave(){ clearTimeout(draftTimer); draftTimer=setTimeout(()=>{ saveDraft({text:ta.value, caret:ta.selectionStart, ts:Date.now()}); }, 500); }
@@ -598,7 +598,6 @@ searchInput.addEventListener('input', ()=>{
   clearTimeout(searchTimer);
   searchTimer = setTimeout(runSearch, 300);
 });
-
 function parseQuery(q){
   q = (q||'').trim();
   if(!q) return { terms:[], ors:[], nots:[], fields:{} };
@@ -611,7 +610,6 @@ function parseQuery(q){
   const terms = (ors.length?[]:rest.split(/\s+/).filter(Boolean));
   return { terms, ors, nots, fields };
 }
-
 function makeHiliter(words){
   const sorted = [...words].sort((a,b)=> b.length - a.length);
   const res = sorted.map(w=> escRe(w));
@@ -619,14 +617,12 @@ function makeHiliter(words){
   const re = new RegExp('('+res.join('|')+')','gi');
   return (s)=> s.replace(re, '<span class="hl">$1</span>');
 }
-
 function snippet(raw, query){
   if(!query.length) return raw.slice(0,120);
   const idx = query.map(w=> raw.toLowerCase().indexOf(w.toLowerCase())).filter(i=>i>=0).sort((a,b)=>a-b)[0] ?? 0;
   const start = Math.max(0, idx-40), end = Math.min(raw.length, idx+80);
   return (start>0?'…':'') + raw.slice(start,end) + (end<raw.length?'…':'');
 }
-
 function runSearch(){
   const q = searchInput.value;
   const {terms, ors, nots, fields} = parseQuery(q);
@@ -666,7 +662,6 @@ function runSearch(){
   document.getElementById('searchList').innerHTML = html;
   document.getElementById('searchCount').textContent = `${hits.length} 件`;
 }
-
 document.getElementById('searchList').addEventListener('click', (e)=>{
   const btn = e.target.closest('.openCardBtn'); if(!btn) return;
   const id = btn.dataset.id;
@@ -735,12 +730,10 @@ async function ensureGisReady(){
   }
   return true;
 }
-
 document.getElementById('connectGoogleBtn').addEventListener('click', async ()=>{
   if(!await ensureGisReady()) return;
   tokenClient.requestAccessToken({prompt:'consent'});
 });
-
 document.getElementById('logoutBtn').addEventListener('click', ()=>{
   localStorage.removeItem(KEY_USER);
   accessToken=null;
