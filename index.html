@@ -51,6 +51,8 @@
       position:absolute;background:var(--card);border:1px solid var(--line);border-radius:12px;
       box-shadow:0 10px 24px rgba(0,0,0,.08);display:none;overflow:auto;min-width:280px;z-index:1000;
       padding-bottom:max(8px, env(safe-area-inset-bottom)); max-height:260px; overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch; /* iOSでスムーズ */
+    touch-action: pan-y;               /* 縦スクロール優先、横は抑制 */
     }
     .item{padding:.55rem .7rem;cursor:pointer;font-size:.95rem;display:flex;gap:.5rem;align-items:center}
     .item:hover{background:#f3f4f6}
@@ -591,22 +593,52 @@ document.getElementById('inlineSlash').addEventListener('click', ()=>{
   updateDropdown();
 });
 
-/* 候補クリック（捕捉フェーズで先取り） */
-['pointerdown','mousedown'].forEach(evt=>{
-  dropdown.addEventListener(evt, (e)=>{
-    const node = e.target.closest('.item');
-    if(!node) return;
-    e.preventDefault(); e.stopPropagation();
-    const idx = parseInt(node.dataset.i, 10);
-    commitDropdown(idx);
-  }, {passive:false, capture:true});
+/* ▼ 候補タップ/スクロール判別（スクロール時は確定しない） */
+let tapState = null;
+const TAP_MOVE_TOL = 6; // px
+
+dropdown.addEventListener('pointerdown', (e)=>{
+  const node = e.target.closest('.item');
+  if(!node) { tapState = null; return; }
+  // スクロールできるように preventDefault はしない
+  tapState = {
+    idx: parseInt(node.dataset.i, 10),
+    x: e.clientX,
+    y: e.clientY,
+    dragged: false,
+    scrollTop0: dropdown.scrollTop
+  };
 });
-dropdown.addEventListener('click', (e)=>{
-  const node = e.target.closest('.item'); if(!node) return;
-  e.preventDefault(); e.stopPropagation();
-  const idx = parseInt(node.dataset.i, 10);
-  commitDropdown(idx);
-}, {passive:false});
+
+dropdown.addEventListener('pointermove', (e)=>{
+  if(!tapState) return;
+  const dx = Math.abs(e.clientX - tapState.x);
+  const dy = Math.abs(e.clientY - tapState.y);
+  if(dx > TAP_MOVE_TOL || dy > TAP_MOVE_TOL) tapState.dragged = true;
+});
+
+dropdown.addEventListener('scroll', ()=>{
+  if(tapState) tapState.dragged = true; // スクロールしたらドラッグ扱い
+});
+
+dropdown.addEventListener('pointerup', (e)=>{
+  if(!tapState) return;
+  // 指を離した位置が別アイテムでもOK（同じリスト内のタップとして扱う）
+  const node = e.target.closest('.item');
+  const idx  = node ? parseInt(node.dataset.i, 10) : tapState.idx;
+  const moved = tapState.dragged;
+  tapState = null;
+
+  if(!moved){
+    // ここでだけ確定＆既定動作を止める（クリック合成を抑止）
+    e.preventDefault();
+    e.stopPropagation();
+    commitDropdown(idx);
+  }
+});
+
+dropdown.addEventListener('pointercancel', ()=>{ tapState=null; });
+
 
 /* 登録ボタン */
 document.getElementById('addBtn').addEventListener('click', ()=>{
