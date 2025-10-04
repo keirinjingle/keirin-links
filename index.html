@@ -7,25 +7,16 @@
   <meta name="description" content="競輪メモをシンプルに。/でスマート補完、当日レース補完、Google Drive連携（任意）。" />
   <!-- ▼ あなたの Client ID（.apps.googleusercontent.com で終わる） -->
   <meta name="mofu:google-client-id" content="451004577569-euhu5f661onevj9a0tlsfr9i4jntm6jm.apps.googleusercontent.com">
-  <!-- ▼ 許可オリジン（※パスなし。必要に応じて追加） -->
+  <!-- ▼ 許可オリジン（必要に応じて追加） -->
   <meta name="mofu:allowed-origins" content="https://keirinjingle.github.io, http://localhost:3000">
   <!-- Google Identity Services -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 
   <style>
     :root{
-      --bg:#fffaf3;          /* やさしい地色（必要なら差し替えOK） */
-      --card:#fff;
-      --fg:#111;
-      --muted:#6b7280;
-      --line:#e5e7eb;
-      --blue:#3b82f6;
-      --blue-soft:#e8f0fe;
-      --green:#10b981;
-      --green-soft:#e8fbf3;
-      --ok:#10b981;
-      --ng:#ef4444;
-      --hl:#FEF3C7;
+      --bg:#fffaf3; --card:#fff; --fg:#111; --muted:#6b7280; --line:#e5e7eb;
+      --blue:#3b82f6; --blue-soft:#e8f0fe; --green:#10b981; --green-soft:#e8fbf3;
+      --ok:#10b981; --ng:#ef4444; --hl:#FEF3C7;
     }
     *{box-sizing:border-box}
     body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;background:var(--bg);color:var(--fg)}
@@ -59,12 +50,11 @@
     .dropdown{
       position:absolute;background:var(--card);border:1px solid var(--line);border-radius:12px;
       box-shadow:0 10px 24px rgba(0,0,0,.08);display:none;overflow:auto;min-width:280px;z-index:1000;
-      /* 画面下インジケータの安全余白を確保 */
-      padding-bottom:max(8px, env(safe-area-inset-bottom));
-      max-height:260px; /* 初期値。JSで動的に狭めます */
+      padding-bottom:max(8px, env(safe-area-inset-bottom)); max-height:260px; overscroll-behavior: contain;
     }
     .item{padding:.55rem .7rem;cursor:pointer;font-size:.95rem;display:flex;gap:.5rem;align-items:center}
     .item:hover{background:#f3f4f6}
+    .item.is-active{ background:#eef2ff; }
     .type{font-size:.7rem;color:#fff;background:#9ca3af;border-radius:999px;padding:0 .4rem}
     .card-actions{margin-left:auto; display:flex; gap:.4rem}
     .linklike{color:#2563eb; background:transparent; border:none; padding:.2rem .4rem; cursor:pointer}
@@ -129,7 +119,7 @@
     <div class="footer">データは端末ローカル（IndexedDB/localStorage）に保存。Googleに接続すると、各ユーザー自身のDrive（App Folder）にも保存・読込が可能です。</div>
   </main>
 
-  <!-- 全文検索モーダル（@選手／+タグクリック時も共通で使用） -->
+  <!-- 全文検索モーダル -->
   <dialog id="searchDlg">
     <div style="padding:12px 14px; display:grid; gap:10px;">
       <div style="display:flex;align-items:center;gap:.5rem;justify-content:space-between">
@@ -161,7 +151,7 @@
 
 <script>
 /* =====================
-   [boot] 設定読み込み（<meta>）
+   設定読み込み（<meta>）
 ===================== */
 const CLIENT_ID = (document.querySelector('meta[name="mofu:google-client-id"]')?.content||'').trim();
 const ALLOWED_ORIGINS = (document.querySelector('meta[name="mofu:allowed-origins"]')?.content||'')
@@ -169,13 +159,13 @@ const ALLOWED_ORIGINS = (document.querySelector('meta[name="mofu:allowed-origins
 const ORIGIN_ALLOWED = !ALLOWED_ORIGINS.length || ALLOWED_ORIGINS.includes(location.origin);
 
 /* =====================
-   [config] データ取得先
+   データ取得先
 ===================== */
 const RIDERS_URL = 'https://keirinjingle.github.io/keirin-links/senshuID.json';
 const RACES_URL  = (ymd) => `https://keirinjingle.github.io/date/keirin_race_list_${ymd}.json`;
 
 /* =====================
-   [util]
+   util
 ===================== */
 const jst = () => new Date();
 const ymd = (d=jst()) => new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10).replace(/-/g,'');
@@ -184,16 +174,29 @@ const ulid = () => Date.now().toString(36)+crypto.getRandomValues(new Uint8Array
 function escRe(s){return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
 
 /* =====================
-   [state]
+   state
 ===================== */
 const KEY_ENTRIES = 'mofu:entries:v1';
 const KEY_DRAFT   = 'mofu:draft:v1';
 const KEY_USER    = 'mofu:user:v1';
-let RIDERS = [];  // { id(登録番号), name, region, ki, grade, profile }
-let DAYCARDS = []; // [{ venue, races:[{race_number, url, ...}] }]
+let RIDERS = [];      // { id(登録番号), name, region, ki, grade, profile }
+let DAYCARDS = [];    // [{ venue, races:[{race_number, url, ...}] }]
+let composing = false;
+let curItems = [];
+let lastCaret = 0;         // 最後のキャレット位置
+let ddSel = -1;            // ドロップダウンの選択インデックス
+
+// Drive 同期
+const DRIVE_FILENAME = 'mofu_entries.ndjson';
+let driveFileId = null;
+let syncTimer = null;
+const SYNC_DEBOUNCE_MS = 1200;
+let tokenClient = null, accessToken = null;
+let didInitialDriveSync = false;
+const SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
 
 /* =====================
-   [status UI]
+   status UI
 ===================== */
 function setStatus(kind, ok, msg){
   const el = kind==='riders' ? document.getElementById('riderStatus') : document.getElementById('raceStatus');
@@ -205,7 +208,7 @@ function setStatus(kind, ok, msg){
 }
 
 /* =====================
-   [storage]
+   storage（ローカル）
 ===================== */
 const loadEntries = ()=> JSON.parse(localStorage.getItem(KEY_ENTRIES)||'[]');
 const saveEntries = (a)=> localStorage.setItem(KEY_ENTRIES, JSON.stringify(a));
@@ -214,10 +217,9 @@ const saveDraft   = (d)=> localStorage.setItem(KEY_DRAFT, JSON.stringify(d));
 const clearDraft  = ()=> localStorage.removeItem(KEY_DRAFT);
 
 /* =====================
-   [fetch data]
+   fetch data
 ===================== */
 function extractKi(kiText){ const m=(kiText||'').match(/(\d+)期/); return m? `${m[1]}期` : (kiText||''); }
-
 async function fetchRiders(){
   try{
     const res = await fetch(RIDERS_URL, {cache:'no-cache'}); if(!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -233,7 +235,6 @@ async function fetchRiders(){
     setStatus('riders', true);
   }catch(e){ console.warn('選手DB取得失敗', e); setStatus('riders', false, e.message||'fetch error'); }
 }
-
 async function fetchRaces(){
   try{
     const url = RACES_URL(ymd());
@@ -245,13 +246,11 @@ async function fetchRaces(){
 }
 
 /* =====================
-   [smart complete "/" ]
+   smart complete "/"
 ===================== */
 const TACTICS = ['三分戦','二分戦','単騎','先行一車','捲り','差し','カマシ'];
 function getSlashToken(text, caret){ const m = text.slice(0, caret).match(/(^|\s)\/(\S*)$/); if(!m) return null; return { token:m[2], start: caret - m[2].length - 1, end: caret }; }
 function norm(s){return (s||'').toLowerCase();}
-let curItems = [];
-
 function findCandidates(q){
   const n = norm(q);
   const items = [];
@@ -286,29 +285,42 @@ function findCandidates(q){
 }
 
 /* =====================
-   [dropdown placement: ハイブリッド方式]
+   dropdown placement（ハイブリッド）
 ===================== */
 const dropdown = document.getElementById('dropdown');
 const ta = document.getElementById('ta');
 const taMirror = document.getElementById('taMirror');
 
 function renderDropdown(items){
-  if(!items.length){ dropdown.style.display='none'; return; }
+  if(!items.length){
+    dropdown.style.display='none';
+    ddSel = -1;
+    return;
+  }
   dropdown.innerHTML = items.map((it,i)=>{
     if(it.type==='rider'){
       const r=it.r; const right = r.region ? `${r.region}／${r.ki}` : r.ki;
       return `<div class="item" data-i="${i}" data-rider-id="${r.id}"><span class="type">選手</span> @${r.name}（${right}）</div>`;
     }
-    if(it.type==='race'){ return `<div class="item" data-i="${i}"><span class="type">レース</span> - ${it.v.venue}${it.r.race_number}R</div>`; }
-    if(it.type==='tactic'){ return `<div class="item" data-i="${i}"><span class="type">戦法</span> #${it.t}</div>`; }
+    if(it.type==='race'){
+      return `<div class="item" data-i="${i}"><span class="type">レース</span> - ${it.v.venue}${it.r.race_number}R</div>`;
+    }
+    if(it.type==='tactic'){
+      return `<div class="item" data-i="${i}"><span class="type">戦法</span> #${it.t}</div>`;
+    }
     return `<div class="item" data-i="${i}"><span class="type">タグ</span> +${it.tag}</div>`;
   }).join('');
+
   dropdown.style.display='block';
-  placeDropdownImmediate();        // ①まずは“欄の直下”に即配置
-  queueCaretAdjust();              // ②少し後に“キャレット直下”へ微調整
+  placeDropdownImmediate();        // 即配置（欄の直下）
+  queueCaretAdjust();              // 微調整（キャレット直下）
+
+  // 初期選択を0番にしてハイライト
+  ddSel = items.length ? 0 : -1;
+  highlightSelection();
 }
 
-/* --- 位置＋高さの最終決定（下/上の空きに応じてフリップ＆max-height調整） --- */
+/* 位置＋高さの最終決定（フリップ＆max-height調整） */
 function placeAndSizeDropdown(preferredLeft, preferredTop, anchorRect){
   const dd = dropdown;
   const vv = window.visualViewport;
@@ -325,9 +337,8 @@ function placeAndSizeDropdown(preferredLeft, preferredTop, anchorRect){
   let left = Math.max(8 + offsetLeft, Math.min(preferredLeft, offsetLeft + vvW - dd.offsetWidth - 8));
   let top  = preferredTop;
 
-  // 下に収まらない→上に出す。どちらでも足りない場合はmax-heightで縮める
   if (spaceBelow < dd.offsetHeight) {
-    const maxH = Math.max(120, spaceAbove);      // 最低120pxは確保
+    const maxH = Math.max(120, spaceAbove);
     dd.style.maxHeight = Math.floor(maxH) + 'px';
     top = Math.round(anchorRect.top + offsetTop - dd.offsetHeight - 8);
     if (top < offsetTop + 8) top = Math.round(offsetTop + 8);
@@ -340,26 +351,23 @@ function placeAndSizeDropdown(preferredLeft, preferredTop, anchorRect){
   dd.style.top  = top  + 'px';
 }
 
-/* --- ① 即配置: visualViewport を考慮して textarea の直下へ --- */
+/* 即配置（textarea の直下） */
 function placeDropdownImmediate(){
   const rect = ta.getBoundingClientRect();
   const vv = window.visualViewport;
   const offsetTop  = vv ? vv.offsetTop  : window.scrollY;
   const offsetLeft = vv ? vv.offsetLeft : window.scrollX;
-
   const preferredLeft = Math.round(rect.left + 12 + offsetLeft);
   const preferredTop  = Math.round(rect.bottom + 8 + offsetTop);
-
   placeAndSizeDropdown(preferredLeft, preferredTop, rect);
 }
 
-/* --- ② 精密配置: キャレット位置ミラー方式で“直下”へ --- */
+/* 精密配置（キャレット直下） */
 let caretAdjustTimer=null;
 function queueCaretAdjust(){
   clearTimeout(caretAdjustTimer);
-  caretAdjustTimer = setTimeout(placeDropdownAtCaret, 40); // 1フレーム待って描画後に
+  caretAdjustTimer = setTimeout(placeDropdownAtCaret, 40);
 }
-
 function syncMirrorStyle(){
   const cs = getComputedStyle(ta);
   const props = [
@@ -382,7 +390,7 @@ function toMirrorHtml(value, caret){
 }
 function getCaretViewportPos(){
   syncMirrorStyle();
-  taMirror.innerHTML = toMirrorHtml(ta.value, ta.selectionStart);
+  taMirror.innerHTML = toMirrorHtml(ta.value, lastCaret);
   const caret = taMirror.querySelector('#__caret__');
   if(!caret) return null;
   const cRect = caret.getBoundingClientRect();
@@ -399,22 +407,69 @@ function placeDropdownAtCaret(){
   if(dropdown.style.display!=='block') return;
   const pos = getCaretViewportPos();
   if(!pos){ placeDropdownImmediate(); return; }
-
   const preferredLeft = pos.left + 0;
   const preferredTop  = pos.top  + 22;
-
   const tRect = ta.getBoundingClientRect();
   placeAndSizeDropdown(preferredLeft, preferredTop, tRect);
 }
 
-/* viewport 変化でも再配置（URLバー出入り、回転、ズーム） */
+/* viewport 変化でも再配置 */
 if(window.visualViewport){
   visualViewport.addEventListener('resize', ()=>{ if(dropdown.style.display==='block') { placeDropdownImmediate(); queueCaretAdjust(); }});
   visualViewport.addEventListener('scroll', ()=>{ if(dropdown.style.display==='block') { placeDropdownImmediate(); queueCaretAdjust(); }});
 }
 
 /* =====================
-   [parse memo & CRUD]
+   ドロップダウン確定＆操作
+===================== */
+function highlightSelection(){
+  const nodes = dropdown.querySelectorAll('.item');
+  nodes.forEach((n,i)=> n.classList.toggle('is-active', i===ddSel));
+  const active = nodes[ddSel];
+  if(active){
+    const r = active.getBoundingClientRect();
+    const pr = dropdown.getBoundingClientRect();
+    if(r.top < pr.top) active.scrollIntoView({block:'nearest'});
+    if(r.bottom > pr.bottom) active.scrollIntoView({block:'nearest'});
+  }
+}
+function moveSelection(delta){
+  const n = dropdown.querySelectorAll('.item').length;
+  if(!n) return;
+  if(ddSel<0) ddSel = 0;
+  ddSel = (ddSel + delta + n) % n;
+  highlightSelection();
+}
+function commitDropdown(idx){
+  const tok = getSlashToken(ta.value, lastCaret);
+  if(!tok) { dropdown.style.display='none'; ddSel=-1; return; }
+  const it = curItems[idx];
+  if(!it) { dropdown.style.display='none'; ddSel=-1; return; }
+
+  let insert = '';
+  if(it.type==='rider'){ insert = '@' + it.r.name; }
+  else if(it.type==='race'){ insert = `- ${it.v.venue}${it.r.race_number}R`; }
+  else if(it.type==='tactic'){ insert = '#' + it.t; }
+  else { insert = '+' + it.tag; }
+
+  const before = ta.value.slice(0, tok.start);
+  const after  = ta.value.slice(tok.end);
+  if(after[0] !== ' ') insert += ' ';
+
+  ta.value = before + insert + after;
+
+  const newPos = (before + insert).length;
+  ta.setSelectionRange(newPos, newPos);
+  lastCaret = newPos;
+
+  dropdown.style.display = 'none';
+  ddSel = -1;
+  ta.focus();
+  scheduleDraftSave();
+}
+
+/* =====================
+   parse memo & CRUD
 ===================== */
 function raceFromRaw(raw){
   const m = raw.match(/-\s*([\u3040-\u30ff\u4e00-\u9fafA-Za-z]+)(\d{1,2})R/);
@@ -424,9 +479,12 @@ function raceFromRaw(raw){
   const v = (DAYCARDS||[]).find(x=> x.venue===venue);
   if(v){
     const r = v.races.find(x=> x.race_number===raceNo);
-    if(r && r.url){ entryUrl = r.url; resultUrl = r.url.replace('/entry/', '/result/'); }
+    if(r && r.url){
+      entryUrl = r.url;
+      resultUrl = r.url.includes('/entry/') ? r.url.replace('/entry/', '/result/') : null;
+    }
   }
-  return { date: ymd_dash(), venue, raceNo, links: resultUrl? {result: resultUrl, entry: entryUrl} : null };
+  return { date: ymd_dash(), venue, raceNo, links: (resultUrl||entryUrl) ? {result: resultUrl, entry: entryUrl} : null };
 }
 function parseEntities(raw){
   const race = raceFromRaw(raw);
@@ -448,21 +506,24 @@ function addEntry(raw){
   entry.riders = resolveRiderIds(entry.riders);
   const arr = loadEntries(); arr.push(entry); saveEntries(arr); clearDraft();
   renderList();
+  scheduleDriveSave();
 }
 function updateEntry(id, newRaw){
   const arr = loadEntries();
   const idx = arr.findIndex(e=>e.id===id);
   if(idx<0) return;
-  const updated = { ...arr[idx], raw: newRaw, ...parseEntities(newRaw) };
+  const updated = { ...arr[idx], raw: newRaw, at: new Date().toISOString(), ...parseEntities(newRaw) };
   updated.riders = resolveRiderIds(updated.riders);
   arr[idx] = updated;
   saveEntries(arr);
   renderList();
+  scheduleDriveSave();
 }
 function deleteEntry(id){
   const arr = loadEntries().filter(e=> e.id!==id);
   saveEntries(arr);
   renderList();
+  scheduleDriveSave();
 }
 function linkifyRaw(html){
   html = html.replace(/@([^\s@#\+（）()]+)([^@#\+\n]*)/g, (m, n, rest)=>{
@@ -475,7 +536,7 @@ function linkifyRaw(html){
 }
 
 /* =====================
-   [render list]
+   render list
 ===================== */
 function renderList(){
   const el = document.getElementById('cards');
@@ -498,50 +559,72 @@ function renderList(){
 }
 
 /* =====================
-   [input handlers]
+   入力ハンドラ
 ===================== */
-let composing = false;
 function updateDropdown(){
-  const tok = getSlashToken(ta.value, ta.selectionStart);
+  const tok = getSlashToken(ta.value, lastCaret);
   if(!tok){ dropdown.style.display='none'; return; }
   curItems = findCandidates(tok.token);
   renderDropdown(curItems);
 }
 ta.addEventListener('compositionstart', ()=>{ composing = true; });
-ta.addEventListener('compositionend', ()=>{ composing = false; updateDropdown(); });
-ta.addEventListener('input', ()=>{ updateDropdown(); scheduleDraftSave(); queueCaretAdjust(); });
-ta.addEventListener('keyup', (e)=>{ if (e.key === '/' && !composing) updateDropdown(); });
+ta.addEventListener('compositionend', ()=>{ composing = false; lastCaret = ta.selectionStart; updateDropdown(); });
+ta.addEventListener('input', ()=>{ lastCaret = ta.selectionStart; updateDropdown(); scheduleDraftSave(); queueCaretAdjust(); });
+ta.addEventListener('keyup', (e)=>{ lastCaret = ta.selectionStart; if (e.key === '/' && !composing) updateDropdown(); });
+ta.addEventListener('click', ()=>{ lastCaret = ta.selectionStart; });
+document.addEventListener('selectionchange', ()=>{ if(document.activeElement===ta){ lastCaret = ta.selectionStart; }});
+
 ta.addEventListener('keydown', (e)=>{
-  if(e.key==='Enter' && !e.shiftKey){
-    if (e.isComposing || composing) return;
-    if(dropdown.style.display==='block' && curItems.length){ commitDropdown(0); e.preventDefault(); }
-    return;
-  }
-  if(e.key==='Escape'){ dropdown.style.display='none'; }
-});
-dropdown.addEventListener('mousedown', (e)=>{
-  const node = e.target.closest('.item'); if(!node) return; commitDropdown(parseInt(node.dataset.i,10)); e.preventDefault();
-});
-document.getElementById('inlineSlash').addEventListener('click', ()=>{
-  ta.focus(); const st=ta.selectionStart; ta.setRangeText('/', st, st, 'end'); updateDropdown();
+  if(dropdown.style.display!=='block') return;
+  if(e.key==='ArrowDown'){ e.preventDefault(); moveSelection(1); }
+  else if(e.key==='ArrowUp'){ e.preventDefault(); moveSelection(-1); }
+  else if(e.key==='Enter' || e.key==='Tab'){ e.preventDefault(); if(ddSel>=0) commitDropdown(ddSel); }
+  else if(e.key==='Escape'){ e.preventDefault(); dropdown.style.display='none'; ddSel = -1; }
 });
 
-/* ▼［登録］ボタンのクリックハンドラ（追加済み） */
+/* スラッシュ挿入ボタン */
+document.getElementById('inlineSlash').addEventListener('click', ()=>{
+  ta.focus();
+  const st = ta.selectionStart;
+  ta.setRangeText('/', st, st, 'end');
+  lastCaret = ta.selectionStart;
+  updateDropdown();
+});
+
+/* 候補クリック（捕捉フェーズで先取り） */
+['pointerdown','mousedown'].forEach(evt=>{
+  dropdown.addEventListener(evt, (e)=>{
+    const node = e.target.closest('.item');
+    if(!node) return;
+    e.preventDefault(); e.stopPropagation();
+    const idx = parseInt(node.dataset.i, 10);
+    commitDropdown(idx);
+  }, {passive:false, capture:true});
+});
+dropdown.addEventListener('click', (e)=>{
+  const node = e.target.closest('.item'); if(!node) return;
+  e.preventDefault(); e.stopPropagation();
+  const idx = parseInt(node.dataset.i, 10);
+  commitDropdown(idx);
+}, {passive:false});
+
+/* 登録ボタン */
 document.getElementById('addBtn').addEventListener('click', ()=>{
   const raw = ta.value.trim();
   if(!raw){ alert('テキストが空です'); return; }
-  addEntry(raw);            // 保存
-  ta.value = '';            // 入力欄クリア
-  dropdown.style.display='none'; // 補完を閉じる
-  renderList();             // リスト再描画
+  addEntry(raw);
+  ta.value = '';
+  dropdown.style.display='none';
+  renderList();
 });
 
+/* draft 保存/復元 */
 let draftTimer=null;
 function scheduleDraftSave(){ clearTimeout(draftTimer); draftTimer=setTimeout(()=>{ saveDraft({text:ta.value, caret:ta.selectionStart, ts:Date.now()}); }, 500); }
-function restoreDraft(){ const d=loadDraft(); if(!d) return; ta.value=d.text||''; const c=d.caret||ta.value.length; ta.setSelectionRange(c,c); }
+function restoreDraft(){ const d=loadDraft(); if(!d) return; ta.value=d.text||''; const c=d.caret||ta.value.length; ta.setSelectionRange(c,c); lastCaret = c; }
 
 /* =====================
-   [settings dropdown & import/export]
+   settings & import/export
 ===================== */
 const settingsBtn = document.getElementById('settingsBtn');
 const settingsMenu = document.getElementById('settingsMenu');
@@ -560,11 +643,13 @@ document.getElementById('importMi').addEventListener('click', ()=>{
   inp.onchange = async ()=>{
     const text = await inp.files[0].text();
     const lines = text.split(/\r?\n/).filter(Boolean);
-    const got = lines.map(l=> JSON.parse(l));
+    const got = []; let bad = 0;
+    for(const l of lines){ try{ got.push(JSON.parse(l)); }catch{ bad++; } }
     const cur = loadEntries(); const seen = new Set(cur.map(x=>x.id));
-    for(const e of got){ if(!seen.has(e.id)){ cur.push(e); seen.add(e.id); } }
+    for(const e of got){ if(e && !seen.has(e.id)){ cur.push(e); seen.add(e.id); } }
     saveEntries(cur); renderList();
-    alert('インポート完了（重複IDはスキップ）');
+    alert(`インポート完了（新規 ${got.length - bad} 件／壊れ行 ${bad} 件）`);
+    scheduleDriveSave();
   };
   inp.click();
 });
@@ -577,7 +662,7 @@ document.getElementById('exportMi').addEventListener('click', ()=>{
 });
 
 /* =====================
-   [search dialog] 全文検索（@選手／+タグのクリックも共通）
+   search dialog
 ===================== */
 const searchDlg = document.getElementById('searchDlg');
 const searchInput = document.getElementById('searchInput');
@@ -671,7 +756,7 @@ document.getElementById('searchList').addEventListener('click', (e)=>{
 });
 
 /* =====================
-   [edit/delete & link clicks]
+   edit/delete & link clicks
 ===================== */
 document.body.addEventListener('click', (e)=>{
   const editBtn = e.target.closest('.editBtn');
@@ -703,19 +788,174 @@ document.getElementById('editSaveBtn').addEventListener('click', (e)=>{
 });
 
 /* =====================
-   [Google Login]
+   Google Drive 連携
 ===================== */
-let tokenClient=null, accessToken=null;
-const SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
+async function waitForGis(){
+  for(let i=0;i<50;i++){
+    if(window.google?.accounts?.oauth2) return;
+    await new Promise(r=>setTimeout(r,100));
+  }
+  throw new Error('Google Identity Services の読み込みに失敗しました');
+}
+function authHeaders(){
+  if(!accessToken) throw new Error('no access token');
+  return { 'Authorization': `Bearer ${accessToken}` };
+}
+/* Drive API helpers */
+async function driveFindFileIdByName(name=DRIVE_FILENAME){
+  const params = new URLSearchParams({
+    spaces: 'appDataFolder',
+    q: `name='${name.replace(/'/g,"\\'")}' and trashed=false`,
+    fields: 'files(id,name)',
+    pageSize: '1',
+  });
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`, { headers: authHeaders() });
+  if(!res.ok) throw new Error(`Drive list failed ${res.status}`);
+  const j = await res.json();
+  return j.files?.[0]?.id || null;
+}
+async function driveDownloadFile(fileId){
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, { headers: authHeaders() });
+  if(!res.ok) throw new Error(`Drive download failed ${res.status}`);
+  return await res.text();
+}
+async function driveCreateFile(name, content){
+  const meta = { name, parents: ['appDataFolder'] };
+  const boundary = 'mofu_' + Math.random().toString(16).slice(2);
+  const body =
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
+    `${JSON.stringify(meta)}\r\n` +
+    `--${boundary}\r\nContent-Type: application/x-ndjson\r\n\r\n` +
+    `${content}\r\n` +
+    `--${boundary}--`;
+  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': `multipart/related; boundary=${boundary}` },
+    body
+  });
+  if(!res.ok) throw new Error(`Drive create failed ${res.status}`);
+  const j = await res.json();
+  return j.id;
+}
+async function driveUpdateFile(fileId, content){
+  const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
+    method: 'PATCH',
+    headers: { ...authHeaders(), 'Content-Type': 'application/x-ndjson' },
+    body: content
+  });
+  if(!res.ok) throw new Error(`Drive update failed ${res.status}`);
+}
 
+/* NDJSON 変換＆マージ */
+function entriesToNdjson(arr){ return arr.map(x=>JSON.stringify(x)).join('\n'); }
+function ndjsonToEntries(text){
+  if(!text) return [];
+  return text.split(/\r?\n/).filter(Boolean).map(l=> JSON.parse(l));
+}
+function mergeEntries(localArr, remoteArr){
+  const map = new Map();
+  for(const e of localArr) map.set(e.id, e);
+  for(const r of remoteArr){
+    const cur = map.get(r.id);
+    if(!cur){ map.set(r.id, r); continue; }
+    if((r.at||'') > (cur.at||'')) map.set(r.id, r); // 新しい方を採用
+  }
+  return Array.from(map.values());
+}
+
+/* 初回接続時：Drive→ローカルに取り込み＆マージ */
+async function syncFromDriveOnce(){
+  try{
+    driveFileId = await driveFindFileIdByName();
+    if(!driveFileId){
+      const nd = entriesToNdjson(loadEntries());
+      driveFileId = await driveCreateFile(DRIVE_FILENAME, nd);
+      return;
+    }
+    const remoteText = await driveDownloadFile(driveFileId);
+    const remote = ndjsonToEntries(remoteText);
+    const local = loadEntries();
+    const merged = mergeEntries(local, remote);
+    if(JSON.stringify(local) !== JSON.stringify(merged)){
+      saveEntries(merged);
+      renderList();
+    }
+  }catch(e){
+    console.warn('Drive初回同期に失敗:', e);
+  }
+}
+
+/* アクセストークンのサイレント更新 */
+function refreshAccessTokenSilent(){
+  return new Promise(async (resolve, reject)=>{
+    try{
+      await waitForGis();
+      if(!tokenClient){
+        tokenClient = google.accounts.oauth2.initTokenClient({
+          client_id: CLIENT_ID,
+          scope: SCOPE,
+          callback: (resp)=>{
+            if(resp.error){ reject(resp); return; }
+            accessToken = resp.access_token;
+            // 初回同期はここでは呼ばない
+            resolve(resp);
+          }
+        });
+      }
+      tokenClient.requestAccessToken({prompt:'none'});
+    }catch(err){ reject(err); }
+  });
+}
+
+/* 変更をDriveに反映（デバウンス＆401時リトライ） */
+function scheduleDriveSave(){
+  if(!accessToken) return; // 未接続
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(async ()=>{
+    try{
+      const nd = entriesToNdjson(loadEntries());
+      if(!driveFileId){
+        driveFileId = await driveFindFileIdByName();
+        if(!driveFileId) driveFileId = await driveCreateFile(DRIVE_FILENAME, nd);
+        else await driveUpdateFile(driveFileId, nd);
+      }else{
+        await driveUpdateFile(driveFileId, nd);
+      }
+    }catch(e){
+      const msg = String(e||'');
+      if(msg.includes('401') || msg.includes('403')){
+        try{
+          await refreshAccessTokenSilent();
+          const nd = entriesToNdjson(loadEntries());
+          if(!driveFileId){
+            driveFileId = await driveFindFileIdByName();
+            if(!driveFileId) driveFileId = await driveCreateFile(DRIVE_FILENAME, nd);
+            else await driveUpdateFile(driveFileId, nd);
+          }else{
+            await driveUpdateFile(driveFileId, nd);
+          }
+        }catch(e2){
+          console.warn('Drive保存失敗（再試行も失敗）:', e2);
+        }
+      }else{
+        console.warn('Drive保存失敗:', e);
+      }
+    }
+  }, SYNC_DEBOUNCE_MS);
+}
+
+/* 接続ボタン */
 async function ensureGisReady(){
-  if(!CLIENT_ID || !CLIENT_ID.endsWith('.apps.googleusercontent.com')){
-    alert('GoogleクライアントIDが未設定か不正です。<meta mofu:google-client-id> を設定してください。');
+  try{
+    await waitForGis();
+  }catch(e){
+    alert('Googleのライブラリが読み込めませんでした。ネットワークをご確認ください。');
     return false;
   }
-  if(!ORIGIN_ALLOWED){
-    alert('このオリジンではDrive連携を無効化しています。'); return false;
+  if(!CLIENT_ID || !CLIENT_ID.endsWith('.apps.googleusercontent.com')){
+    alert('GoogleクライアントIDが未設定か不正です。<meta mofu:google-client-id> を設定してください。'); return false;
   }
+  if(!ORIGIN_ALLOWED){ alert('このオリジンではDrive連携を無効化しています。'); return false; }
   if(!tokenClient){
     tokenClient = google.accounts.oauth2.initTokenClient({
       client_id: CLIENT_ID,
@@ -724,7 +964,11 @@ async function ensureGisReady(){
         if(resp.error){ console.error(resp); alert('Google接続に失敗しました'); return; }
         accessToken = resp.access_token;
         localStorage.setItem(KEY_USER, JSON.stringify({ hasToken:true, ts:Date.now() }));
-        alert('Googleに接続しました（App Folder 連携の準備OK）');
+        if(!didInitialDriveSync){
+          didInitialDriveSync = true;
+          syncFromDriveOnce();
+          alert('Googleに接続しました（App Folder 連携の準備OK）');
+        }
       }
     });
   }
@@ -741,14 +985,19 @@ document.getElementById('logoutBtn').addEventListener('click', ()=>{
 });
 
 /* =====================
-   [init]
+   init
 ===================== */
-function updateDropdownTrigger(){ const tok = getSlashToken(ta.value, ta.selectionStart); if(!tok){ dropdown.style.display='none'; return; } curItems = findCandidates(tok.token); renderDropdown(curItems); }
-
+function updateDropdownTrigger(){
+  const tok = getSlashToken(ta.value, lastCaret);
+  if(!tok){ dropdown.style.display='none'; return; }
+  curItems = findCandidates(tok.token);
+  renderDropdown(curItems);
+}
 (async function init(){
   restoreDraft();
   await Promise.all([fetchRiders(), fetchRaces()]);
   renderList();
+  // 既存トークンの再利用はユーザー操作時（接続ボタン押下）に更新する運用にしています
 })();
 </script>
 </body>
