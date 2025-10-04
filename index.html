@@ -50,9 +50,8 @@
     .dropdown{
       position:absolute;background:var(--card);border:1px solid var(--line);border-radius:12px;
       box-shadow:0 10px 24px rgba(0,0,0,.08);display:none;overflow:auto;min-width:280px;z-index:1000;
-      padding-bottom:max(8px, env(safe-area-inset-bottom)); max-height:260px; overscroll-behavior: contain;
-    -webkit-overflow-scrolling: touch; /* iOSでスムーズ */
-    touch-action: pan-y;               /* 縦スクロール優先、横は抑制 */
+      padding-bottom:max(8px, env(safe-area-inset-bottom)); max-height:260px;
+      overscroll-behavior: contain; -webkit-overflow-scrolling: touch; touch-action: pan-y;
     }
     .item{padding:.55rem .7rem;cursor:pointer;font-size:.95rem;display:flex;gap:.5rem;align-items:center}
     .item:hover{background:#f3f4f6}
@@ -98,7 +97,6 @@
   </header>
 
   <main class="wrap">
-    <!-- 短縮ヒント（2行） -->
     <div class="hint">
       <div>・「/」で補完を開きます（選手／当日レース／戦法／タグ）。</div>
       <div>・使い方は <a href="https://keirinjingle.github.io/keirin-links/howto.html" target="_blank" rel="noopener">詳細な使い方はこちら</a></div>
@@ -121,7 +119,7 @@
     <div class="footer">データは端末ローカル（IndexedDB/localStorage）に保存。Googleに接続すると、各ユーザー自身のDrive（App Folder）にも保存・読込が可能です。</div>
   </main>
 
-  <!-- 全文検索モーダル -->
+  <!-- 検索ダイアログ -->
   <dialog id="searchDlg">
     <div style="padding:12px 14px; display:grid; gap:10px;">
       <div style="display:flex;align-items:center;gap:.5rem;justify-content:space-between">
@@ -148,58 +146,40 @@
     </form>
   </dialog>
 
-  <!-- キャレット座標計算用ミラー要素 -->
   <pre id="taMirror"></pre>
 
 <script>
-/* =====================
-   設定読み込み（<meta>）
-===================== */
+/* ========== meta ========== */
 const CLIENT_ID = (document.querySelector('meta[name="mofu:google-client-id"]')?.content||'').trim();
 const ALLOWED_ORIGINS = (document.querySelector('meta[name="mofu:allowed-origins"]')?.content||'')
   .split(',').map(s=>s.trim()).filter(Boolean);
 const ORIGIN_ALLOWED = !ALLOWED_ORIGINS.length || ALLOWED_ORIGINS.includes(location.origin);
 
-/* =====================
-   データ取得先
-===================== */
+/* ========== endpoints ========== */
 const RIDERS_URL = 'https://keirinjingle.github.io/keirin-links/senshuID.json';
 const RACES_URL  = (ymd) => `https://keirinjingle.github.io/date/keirin_race_list_${ymd}.json`;
 
-/* =====================
-   util
-===================== */
+/* ========== util ========== */
 const jst = () => new Date();
 const ymd = (d=jst()) => new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10).replace(/-/g,'');
 const ymd_dash = (d=jst()) => new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);
 const ulid = () => Date.now().toString(36)+crypto.getRandomValues(new Uint8Array(10)).reduce((a,b)=>a+b.toString(16).padStart(2,'0'),'');
 function escRe(s){return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
 
-/* =====================
-   state
-===================== */
-const KEY_ENTRIES = 'mofu:entries:v1';
-const KEY_DRAFT   = 'mofu:draft:v1';
-const KEY_USER    = 'mofu:user:v1';
-let RIDERS = [];      // { id(登録番号), name, region, ki, grade, profile }
-let DAYCARDS = [];    // [{ venue, races:[{race_number, url, ...}] }]
-let composing = false;
-let curItems = [];
-let lastCaret = 0;         // 最後のキャレット位置
-let ddSel = -1;            // ドロップダウンの選択インデックス
+/* ========== state ========== */
+const KEY_ENTRIES='mofu:entries:v1', KEY_DRAFT='mofu:draft:v1', KEY_USER='mofu:user:v1';
+let RIDERS=[], DAYCARDS=[];
+let composing=false, curItems=[], lastCaret=0, ddSel=-1;
+let imeJustEnded=false; const IME_SUPPRESS_MS=140;
 
-// Drive 同期
-const DRIVE_FILENAME = 'mofu_entries.ndjson';
-let driveFileId = null;
-let syncTimer = null;
-const SYNC_DEBOUNCE_MS = 1200;
-let tokenClient = null, accessToken = null;
-let didInitialDriveSync = false;
-const SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
+// Drive
+const DRIVE_FILENAME='mofu_entries.ndjson';
+let driveFileId=null, syncTimer=null;
+const SYNC_DEBOUNCE_MS=1200;
+let tokenClient=null, accessToken=null, didInitialDriveSync=false;
+const SCOPE='https://www.googleapis.com/auth/drive.appdata';
 
-/* =====================
-   status UI
-===================== */
+/* ========== status UI ========== */
 function setStatus(kind, ok, msg){
   const el = kind==='riders' ? document.getElementById('riderStatus') : document.getElementById('raceStatus');
   const mark = el.querySelector('.mark');
@@ -209,827 +189,511 @@ function setStatus(kind, ok, msg){
   if(kind==='races'){ document.getElementById('raceNotice').style.display = ok ? 'none' : 'block'; }
 }
 
-/* =====================
-   storage（ローカル）
-===================== */
-const loadEntries = ()=> JSON.parse(localStorage.getItem(KEY_ENTRIES)||'[]');
-const saveEntries = (a)=> localStorage.setItem(KEY_ENTRIES, JSON.stringify(a));
-const loadDraft   = ()=> JSON.parse(localStorage.getItem(KEY_DRAFT)||'null');
-const saveDraft   = (d)=> localStorage.setItem(KEY_DRAFT, JSON.stringify(d));
-const clearDraft  = ()=> localStorage.removeItem(KEY_DRAFT);
+/* ========== local storage ========== */
+const loadEntries=()=>JSON.parse(localStorage.getItem(KEY_ENTRIES)||'[]');
+const saveEntries=(a)=>localStorage.setItem(KEY_ENTRIES, JSON.stringify(a));
+const loadDraft=()=>JSON.parse(localStorage.getItem(KEY_DRAFT)||'null');
+const saveDraft=(d)=>localStorage.setItem(KEY_DRAFT, JSON.stringify(d));
+const clearDraft=()=>localStorage.removeItem(KEY_DRAFT);
 
-/* =====================
-   fetch data
-===================== */
+/* ========== fetch data ========== */
 function extractKi(kiText){ const m=(kiText||'').match(/(\d+)期/); return m? `${m[1]}期` : (kiText||''); }
 async function fetchRiders(){
   try{
-    const res = await fetch(RIDERS_URL, {cache:'no-cache'}); if(!res.ok) throw new Error(`HTTP ${res.status}`);
-    const text = await res.text(); let arr; try{ arr=JSON.parse(text) }catch(e){ throw new Error('JSON parse error'); }
-    RIDERS = arr.map(r=>({
-      id: String(r['登録番号']||'').trim(),
-      name: r['選手名'],
-      ki: extractKi(r['期']),
-      region: r['地域']||'',
-      grade: r['級']||'',
-      profile: (r['プロフィールURL']||'').replace('https://keirin.netkeiba.comhttps://','https://')
-    }));
+    const res=await fetch(RIDERS_URL,{cache:'no-cache'}); if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    const text=await res.text(); let arr; try{arr=JSON.parse(text)}catch{throw new Error('JSON parse error')}
+    RIDERS = arr.map(r=>({ id:String(r['登録番号']||'').trim(), name:r['選手名'], ki:extractKi(r['期']), region:r['地域']||'', grade:r['級']||'', profile:(r['プロフィールURL']||'').replace('https://keirin.netkeiba.comhttps://','https://') }));
     setStatus('riders', true);
-  }catch(e){ console.warn('選手DB取得失敗', e); setStatus('riders', false, e.message||'fetch error'); }
+  }catch(e){ console.warn('選手DB取得失敗',e); setStatus('riders', false, e.message||'fetch error'); }
 }
 async function fetchRaces(){
   try{
-    const url = RACES_URL(ymd());
-    const res = await fetch(url, {cache:'no-cache'}); if(!res.ok) throw new Error(`HTTP ${res.status}`);
-    const text = await res.text(); let data; try{ data=JSON.parse(text) }catch(e){ throw new Error('JSON parse error'); }
+    const url=RACES_URL(ymd());
+    const res=await fetch(url,{cache:'no-cache'}); if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    const text=await res.text(); let data; try{data=JSON.parse(text)}catch{throw new Error('JSON parse error')}
     DAYCARDS = Array.isArray(data) ? data : [];
     setStatus('races', true);
-  }catch(e){ console.warn('当日レース取得失敗', e); setStatus('races', false, e.message||'fetch error'); }
+  }catch(e){ console.warn('当日レース取得失敗',e); setStatus('races', false, e.message||'fetch error'); }
 }
 
-/* =====================
-   smart complete "/"
-===================== */
-const TACTICS = ['三分戦','二分戦','単騎','先行一車','捲り','差し','カマシ'];
-function getSlashToken(text, caret){ const m = text.slice(0, caret).match(/(^|\s)\/(\S*)$/); if(!m) return null; return { token:m[2], start: caret - m[2].length - 1, end: caret }; }
+/* ========== smart complete "/" ========== */
+const TACTICS=['三分戦','二分戦','単騎','先行一車','捲り','差し','カマシ'];
+function getSlashToken(text, caret){ const m=text.slice(0,caret).match(/(^|\s)\/(\S*)$/); if(!m) return null; return { token:m[2], start:caret-m[2].length-1, end:caret }; }
 function norm(s){return (s||'').toLowerCase();}
 function findCandidates(q){
-  const n = norm(q);
-  const items = [];
-  const wantFallback = !q || !q.trim();
+  const n=norm(q); const items=[]; const wantFallback=!q||!q.trim();
 
-  // 選手
+  const hasDigit=/[0-9０-９]/.test(q||'');
+  const looksVenue=!!(DAYCARDS&&DAYCARDS.length&&q&&DAYCARDS.some(v=>{
+    const vn=norm(v.venue); return vn.startsWith(n)||n.startsWith(vn)||vn.includes(n)||n.includes(vn);
+  }));
+
+  // 1) 選手（最優先）
   if(RIDERS.length && q){
-    const list = RIDERS.filter(r=> `${r.name} ${r.region} ${r.ki}`.toLowerCase().includes(n)).slice(0,6);
+    const list=RIDERS.filter(r=>`${r.name} ${r.region} ${r.ki}`.toLowerCase().includes(n)).slice(0,6);
     items.push(...list.map(r=>({type:'rider', r})));
   }
-  // レース（会場名+数字）
-  if(DAYCARDS && DAYCARDS.length){
-    const numM = n.match(/(\d{1,2})$/); const maybeNo = numM? parseInt(numM[1],10): null;
-    for(const v of DAYCARDS){
-      const aliases = [v.venue];
-      if(aliases.some(a => norm(a).includes(n) || n.includes(norm(a)))){
+  // 2) レース（数字/会場らしい/未入力のとき）
+  if(DAYCARDS && DAYCARDS.length && (wantFallback || hasDigit || looksVenue)){
+    const numM=n.match(/(\d{1,2})$/); const maybeNo=numM?parseInt(numM[1],10):null;
+    outer: for(const v of DAYCARDS){
+      const aliases=[v.venue];
+      if(aliases.some(a=>norm(a).includes(n)||n.includes(norm(a)))){
         for(const rr of v.races){
           if(maybeNo==null || rr.race_number===maybeNo){
-            items.push({type:'race', v, r: rr});
-            if(items.length>=8) break;
+            items.push({type:'race', v, r:rr});
+            if(items.length>=8) break outer;
           }
         }
       }
-      if(items.length>=8) break;
     }
   }
-  // 戦法
-  items.push(...(wantFallback? TACTICS : TACTICS.filter(t=>t.includes(q))).map(t=>({type:'tactic', t})));
-  // タグ
+  // 3) 戦法
+  items.push(...(wantFallback?TACTICS:TACTICS.filter(t=>t.includes(q))).map(t=>({type:'tactic', t})));
+  // 4) タグ
   if(q) items.push({type:'tag', tag:q});
+
   return items.slice(0,8);
 }
 
-/* =====================
-   dropdown placement（ハイブリッド）
-===================== */
-const dropdown = document.getElementById('dropdown');
-const ta = document.getElementById('ta');
-const taMirror = document.getElementById('taMirror');
+/* ========== dropdown placement ========== */
+const dropdown=document.getElementById('dropdown');
+const ta=document.getElementById('ta');
+const taMirror=document.getElementById('taMirror');
 
 function renderDropdown(items){
-  if(!items.length){
-    dropdown.style.display='none';
-    ddSel = -1;
-    return;
-  }
-  dropdown.innerHTML = items.map((it,i)=>{
+  if(!items.length){ dropdown.style.display='none'; ddSel=-1; return; }
+  dropdown.innerHTML=items.map((it,i)=>{
     if(it.type==='rider'){
-      const r=it.r; const right = r.region ? `${r.region}／${r.ki}` : r.ki;
+      const r=it.r; const right=r.region?`${r.region}／${r.ki}`:r.ki;
       return `<div class="item" data-i="${i}" data-rider-id="${r.id}"><span class="type">選手</span> @${r.name}（${right}）</div>`;
     }
-    if(it.type==='race'){
-      return `<div class="item" data-i="${i}"><span class="type">レース</span> - ${it.v.venue}${it.r.race_number}R</div>`;
-    }
-    if(it.type==='tactic'){
-      return `<div class="item" data-i="${i}"><span class="type">戦法</span> #${it.t}</div>`;
-    }
+    if(it.type==='race'){ return `<div class="item" data-i="${i}"><span class="type">レース</span> - ${it.v.venue}${it.r.race_number}R</div>`; }
+    if(it.type==='tactic'){ return `<div class="item" data-i="${i}"><span class="type">戦法</span> #${it.t}</div>`; }
     return `<div class="item" data-i="${i}"><span class="type">タグ</span> +${it.tag}</div>`;
   }).join('');
-
   dropdown.style.display='block';
-  placeDropdownImmediate();        // 即配置（欄の直下）
-  queueCaretAdjust();              // 微調整（キャレット直下）
-
-  // 初期選択を0番にしてハイライト
-  ddSel = items.length ? 0 : -1;
-  highlightSelection();
+  placeDropdownImmediate(); queueCaretAdjust();
+  ddSel=items.length?0:-1; highlightSelection();
+  dropdown.scrollTop=0; // 新しい候補で先頭へ
 }
-
-/* 位置＋高さの最終決定（フリップ＆max-height調整） */
 function placeAndSizeDropdown(preferredLeft, preferredTop, anchorRect){
-  const dd = dropdown;
-  const vv = window.visualViewport;
-  const offsetTop  = vv ? vv.offsetTop  : window.scrollY;
-  const offsetLeft = vv ? vv.offsetLeft : window.scrollX;
-  const vvH = vv ? vv.height : window.innerHeight;
-  const vvW = vv ? vv.width  : window.innerWidth;
-
-  const anchorBottom = anchorRect.bottom + offsetTop;
-  const anchorTop    = anchorRect.top    + offsetTop;
-  const spaceBelow = (offsetTop + vvH) - anchorBottom - 8;
-  const spaceAbove = anchorTop - offsetTop - 8;
-
-  let left = Math.max(8 + offsetLeft, Math.min(preferredLeft, offsetLeft + vvW - dd.offsetWidth - 8));
-  let top  = preferredTop;
-
-  if (spaceBelow < dd.offsetHeight) {
-    const maxH = Math.max(120, spaceAbove);
-    dd.style.maxHeight = Math.floor(maxH) + 'px';
-    top = Math.round(anchorRect.top + offsetTop - dd.offsetHeight - 8);
-    if (top < offsetTop + 8) top = Math.round(offsetTop + 8);
-  } else {
-    dd.style.maxHeight = Math.floor(Math.max(160, spaceBelow)) + 'px';
+  const dd=dropdown; const vv=window.visualViewport;
+  const offsetTop=vv?vv.offsetTop:window.scrollY; const offsetLeft=vv?vv.offsetLeft:window.scrollX;
+  const vvH=vv?vv.height:window.innerHeight; const vvW=vv?vv.width:window.innerWidth;
+  const anchorBottom=anchorRect.bottom+offsetTop; const anchorTop=anchorRect.top+offsetTop;
+  const spaceBelow=(offsetTop+vvH)-anchorBottom-8; const spaceAbove=anchorTop-offsetTop-8;
+  let left=Math.max(8+offsetLeft, Math.min(preferredLeft, offsetLeft+vvW-dd.offsetWidth-8));
+  let top=preferredTop;
+  if(spaceBelow<dd.offsetHeight){
+    const maxH=Math.max(120, spaceAbove); dd.style.maxHeight=Math.floor(maxH)+'px';
+    top=Math.round(anchorRect.top+offsetTop-dd.offsetHeight-8); if(top<offsetTop+8) top=Math.round(offsetTop+8);
+  }else{
+    dd.style.maxHeight=Math.floor(Math.max(160, spaceBelow))+'px';
   }
-
-  left = Math.max(8 + offsetLeft, Math.min(left, offsetLeft + vvW - dd.offsetWidth - 8));
-  dd.style.left = left + 'px';
-  dd.style.top  = top  + 'px';
+  left=Math.max(8+offsetLeft, Math.min(left, offsetLeft+vvW-dd.offsetWidth-8));
+  dd.style.left=left+'px'; dd.style.top=top+'px';
 }
-
-/* 即配置（textarea の直下） */
 function placeDropdownImmediate(){
-  const rect = ta.getBoundingClientRect();
-  const vv = window.visualViewport;
-  const offsetTop  = vv ? vv.offsetTop  : window.scrollY;
-  const offsetLeft = vv ? vv.offsetLeft : window.scrollX;
-  const preferredLeft = Math.round(rect.left + 12 + offsetLeft);
-  const preferredTop  = Math.round(rect.bottom + 8 + offsetTop);
+  const rect=ta.getBoundingClientRect(); const vv=window.visualViewport;
+  const offsetTop=vv?vv.offsetTop:window.scrollY; const offsetLeft=vv?vv.offsetLeft:window.scrollX;
+  const preferredLeft=Math.round(rect.left+12+offsetLeft);
+  const preferredTop=Math.round(rect.bottom+8+offsetTop);
   placeAndSizeDropdown(preferredLeft, preferredTop, rect);
 }
-
-/* 精密配置（キャレット直下） */
 let caretAdjustTimer=null;
-function queueCaretAdjust(){
-  clearTimeout(caretAdjustTimer);
-  caretAdjustTimer = setTimeout(placeDropdownAtCaret, 40);
-}
+function queueCaretAdjust(){ clearTimeout(caretAdjustTimer); caretAdjustTimer=setTimeout(placeDropdownAtCaret,40); }
 function syncMirrorStyle(){
-  const cs = getComputedStyle(ta);
-  const props = [
-    'fontFamily','fontSize','fontWeight','fontStyle','letterSpacing','textTransform',
-    'textAlign','lineHeight','paddingTop','paddingRight','paddingBottom','paddingLeft',
-    'borderTopWidth','borderRightWidth','borderBottomWidth','borderLeftWidth','boxSizing'
-  ];
-  props.forEach(p=> taMirror.style[p] = cs[p]);
-  taMirror.style.width = ta.clientWidth + 'px';
+  const cs=getComputedStyle(ta);
+  ['fontFamily','fontSize','fontWeight','fontStyle','letterSpacing','textTransform','textAlign','lineHeight','paddingTop','paddingRight','paddingBottom','paddingLeft','borderTopWidth','borderRightWidth','borderBottomWidth','borderLeftWidth','boxSizing'].forEach(p=> taMirror.style[p]=cs[p]);
+  taMirror.style.width=ta.clientWidth+'px';
 }
 function escapeHtml(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function toMirrorHtml(value, caret){
-  const before = value.slice(0, caret);
-  const after  = value.slice(caret);
-  return escapeHtml(before)
-    .replace(/\n$/g, '\n\u200b')
-    .replace(/\n/g, '<br/>') +
-    '<span id="__caret__">\u200b</span>' +
-    escapeHtml(after).replace(/\n/g,'<br/>');
+  const before=value.slice(0,caret), after=value.slice(caret);
+  return escapeHtml(before).replace(/\n$/g,'\n\u200b').replace(/\n/g,'<br/>') + '<span id="__caret__">\u200b</span>' + escapeHtml(after).replace(/\n/g,'<br/>');
 }
 function getCaretViewportPos(){
-  syncMirrorStyle();
-  taMirror.innerHTML = toMirrorHtml(ta.value, lastCaret);
-  const caret = taMirror.querySelector('#__caret__');
-  if(!caret) return null;
-  const cRect = caret.getBoundingClientRect();
-  const tRect = ta.getBoundingClientRect();
-  const vv = window.visualViewport;
-  const offsetTop = vv ? vv.offsetTop : window.scrollY;
-  const offsetLeft = vv ? vv.offsetLeft : window.scrollX;
-
-  const left = Math.round(tRect.left + (cRect.left - taMirror.getBoundingClientRect().left) + offsetLeft);
-  const top  = Math.round(tRect.top  + (cRect.top  - taMirror.getBoundingClientRect().top ) + offsetTop);
+  syncMirrorStyle(); taMirror.innerHTML=toMirrorHtml(ta.value, lastCaret);
+  const caret=taMirror.querySelector('#__caret__'); if(!caret) return null;
+  const cRect=caret.getBoundingClientRect(); const tRect=ta.getBoundingClientRect(); const vv=window.visualViewport;
+  const offsetTop=vv?vv.offsetTop:window.scrollY; const offsetLeft=vv?vv.offsetLeft:window.scrollX;
+  const left=Math.round(tRect.left+(cRect.left-taMirror.getBoundingClientRect().left)+offsetLeft);
+  const top=Math.round(tRect.top+(cRect.top-taMirror.getBoundingClientRect().top)+offsetTop);
   return {left, top};
 }
 function placeDropdownAtCaret(){
   if(dropdown.style.display!=='block') return;
-  const pos = getCaretViewportPos();
-  if(!pos){ placeDropdownImmediate(); return; }
-  const preferredLeft = pos.left + 0;
-  const preferredTop  = pos.top  + 22;
-  const tRect = ta.getBoundingClientRect();
+  const pos=getCaretViewportPos(); if(!pos){ placeDropdownImmediate(); return; }
+  const preferredLeft=pos.left+0; const preferredTop=pos.top+22; const tRect=ta.getBoundingClientRect();
   placeAndSizeDropdown(preferredLeft, preferredTop, tRect);
 }
-
-/* viewport 変化でも再配置 */
 if(window.visualViewport){
-  visualViewport.addEventListener('resize', ()=>{ if(dropdown.style.display==='block') { placeDropdownImmediate(); queueCaretAdjust(); }});
-  visualViewport.addEventListener('scroll', ()=>{ if(dropdown.style.display==='block') { placeDropdownImmediate(); queueCaretAdjust(); }});
+  visualViewport.addEventListener('resize', ()=>{ if(dropdown.style.display==='block'){ placeDropdownImmediate(); queueCaretAdjust(); }});
+  visualViewport.addEventListener('scroll', ()=>{ if(dropdown.style.display==='block'){ placeDropdownImmediate(); queueCaretAdjust(); }});
 }
 
-/* =====================
-   ドロップダウン確定＆操作
-===================== */
+/* ========== dropdown confirm & keyboard ========== */
 function highlightSelection(){
-  const nodes = dropdown.querySelectorAll('.item');
-  nodes.forEach((n,i)=> n.classList.toggle('is-active', i===ddSel));
-  const active = nodes[ddSel];
+  const nodes=dropdown.querySelectorAll('.item');
+  nodes.forEach((n,i)=>n.classList.toggle('is-active', i===ddSel));
+  const active=nodes[ddSel];
   if(active){
-    const r = active.getBoundingClientRect();
-    const pr = dropdown.getBoundingClientRect();
-    if(r.top < pr.top) active.scrollIntoView({block:'nearest'});
-    if(r.bottom > pr.bottom) active.scrollIntoView({block:'nearest'});
+    const r=active.getBoundingClientRect(), pr=dropdown.getBoundingClientRect();
+    if(r.top<pr.top || r.bottom>pr.bottom) active.scrollIntoView({block:'nearest'});
   }
 }
 function moveSelection(delta){
-  const n = dropdown.querySelectorAll('.item').length;
-  if(!n) return;
-  if(ddSel<0) ddSel = 0;
-  ddSel = (ddSel + delta + n) % n;
-  highlightSelection();
+  const n=dropdown.querySelectorAll('.item').length; if(!n) return;
+  if(ddSel<0) ddSel=0; ddSel=(ddSel+delta+n)%n; highlightSelection();
 }
 function commitDropdown(idx){
-  const tok = getSlashToken(ta.value, lastCaret);
-  if(!tok) { dropdown.style.display='none'; ddSel=-1; return; }
-  const it = curItems[idx];
-  if(!it) { dropdown.style.display='none'; ddSel=-1; return; }
-
-  let insert = '';
-  if(it.type==='rider'){ insert = '@' + it.r.name; }
-  else if(it.type==='race'){ insert = `- ${it.v.venue}${it.r.race_number}R`; }
-  else if(it.type==='tactic'){ insert = '#' + it.t; }
-  else { insert = '+' + it.tag; }
-
-  const before = ta.value.slice(0, tok.start);
-  const after  = ta.value.slice(tok.end);
-  if(after[0] !== ' ') insert += ' ';
-
-  ta.value = before + insert + after;
-
-  const newPos = (before + insert).length;
-  ta.setSelectionRange(newPos, newPos);
-  lastCaret = newPos;
-
-  dropdown.style.display = 'none';
-  ddSel = -1;
-  ta.focus();
-  scheduleDraftSave();
+  const tok=getSlashToken(ta.value, lastCaret); if(!tok){ dropdown.style.display='none'; ddSel=-1; return; }
+  const it=curItems[idx]; if(!it){ dropdown.style.display='none'; ddSel=-1; return; }
+  let insert='';
+  if(it.type==='rider') insert='@'+it.r.name;
+  else if(it.type==='race') insert=`- ${it.v.venue}${it.r.race_number}R`;
+  else if(it.type==='tactic') insert='#'+it.t;
+  else insert='+'+it.tag;
+  const before=ta.value.slice(0,tok.start); const after=ta.value.slice(tok.end);
+  if(after[0]!==' ') insert+=' ';
+  ta.value=before+insert+after;
+  const newPos=(before+insert).length; ta.setSelectionRange(newPos,newPos); lastCaret=newPos;
+  dropdown.style.display='none'; ddSel=-1; ta.focus(); scheduleDraftSave();
 }
 
-/* =====================
-   parse memo & CRUD
-===================== */
+/* ========== parse memo & CRUD ========== */
 function raceFromRaw(raw){
-  const m = raw.match(/-\s*([\u3040-\u30ff\u4e00-\u9fafA-Za-z]+)(\d{1,2})R/);
+  const m=raw.match(/-\s*([\u3040-\u30ff\u4e00-\u9fafA-Za-z]+)(\d{1,2})R/);
   if(!m) return null;
-  const venue = m[1]; const raceNo = parseInt(m[2],10);
+  const venue=m[1]; const raceNo=parseInt(m[2],10);
   let resultUrl=null, entryUrl=null;
-  const v = (DAYCARDS||[]).find(x=> x.venue===venue);
+  const v=(DAYCARDS||[]).find(x=>x.venue===venue);
   if(v){
-    const r = v.races.find(x=> x.race_number===raceNo);
-    if(r && r.url){
-      entryUrl = r.url;
-      resultUrl = r.url.includes('/entry/') ? r.url.replace('/entry/', '/result/') : null;
-    }
+    const r=v.races.find(x=>x.race_number===raceNo);
+    if(r && r.url){ entryUrl=r.url; resultUrl=r.url.includes('/entry/')? r.url.replace('/entry/','/result/') : null; }
   }
-  return { date: ymd_dash(), venue, raceNo, links: (resultUrl||entryUrl) ? {result: resultUrl, entry: entryUrl} : null };
+  return { date: ymd_dash(), venue, raceNo, links:(resultUrl||entryUrl)?{result:resultUrl, entry:entryUrl}:null };
 }
 function parseEntities(raw){
-  const race = raceFromRaw(raw);
-  const riders = Array.from(raw.matchAll(/@([^\s@#\+（）()]+)(?:（[^）]*）)?/g)).map(m=>({name:m[1]}));
-  const tactics = Array.from(raw.matchAll(/#(\S+)/g)).map(m=>m[1]);
-  const tags = Array.from(raw.matchAll(/\+("[^"]+"|\S+)/g)).map(m=> m[1].replace(/^"|"$/g,''));
+  const race=raceFromRaw(raw);
+  const riders=Array.from(raw.matchAll(/@([^\s@#\+（）()]+)(?:（[^）]*）)?/g)).map(m=>({name:m[1]}));
+  const tactics=Array.from(raw.matchAll(/#(\S+)/g)).map(m=>m[1]);
+  const tags=Array.from(raw.matchAll(/\+("[^"]+"|\S+)/g)).map(m=>m[1].replace(/^"|"$/g,''));
   return {race, riders, tactics, tags};
 }
 function resolveRiderIds(riders){
   return riders.map(x=>{
     if(x.id) return x;
-    const cand = RIDERS.filter(r=> r.name===x.name);
+    const cand=RIDERS.filter(r=>r.name===x.name);
     if(cand.length===1) return {...x, id:cand[0].id, region:cand[0].region, ki:cand[0].ki};
     return {...x};
   });
 }
 function addEntry(raw){
-  const entry = { id: ulid(), at: new Date().toISOString(), raw, ...parseEntities(raw) };
-  entry.riders = resolveRiderIds(entry.riders);
-  const arr = loadEntries(); arr.push(entry); saveEntries(arr); clearDraft();
-  renderList();
-  scheduleDriveSave();
+  const entry={ id:ulid(), at:new Date().toISOString(), raw, ...parseEntities(raw) };
+  entry.riders=resolveRiderIds(entry.riders);
+  const arr=loadEntries(); arr.push(entry); saveEntries(arr); clearDraft();
+  renderList(); scheduleDriveSave();
 }
 function updateEntry(id, newRaw){
-  const arr = loadEntries();
-  const idx = arr.findIndex(e=>e.id===id);
-  if(idx<0) return;
-  const updated = { ...arr[idx], raw: newRaw, at: new Date().toISOString(), ...parseEntities(newRaw) };
-  updated.riders = resolveRiderIds(updated.riders);
-  arr[idx] = updated;
-  saveEntries(arr);
-  renderList();
-  scheduleDriveSave();
+  const arr=loadEntries(); const idx=arr.findIndex(e=>e.id===id); if(idx<0) return;
+  const updated={ ...arr[idx], raw:newRaw, at:new Date().toISOString(), ...parseEntities(newRaw) };
+  updated.riders=resolveRiderIds(updated.riders);
+  arr[idx]=updated; saveEntries(arr); renderList(); scheduleDriveSave();
 }
 function deleteEntry(id){
-  const arr = loadEntries().filter(e=> e.id!==id);
-  saveEntries(arr);
-  renderList();
-  scheduleDriveSave();
+  const arr=loadEntries().filter(e=>e.id!==id);
+  saveEntries(arr); renderList(); scheduleDriveSave();
 }
 function linkifyRaw(html){
-  html = html.replace(/@([^\s@#\+（）()]+)([^@#\+\n]*)/g, (m, n, rest)=>{
-    const rr = RIDERS.find(r=> r.name===n);
-    const rid = rr? rr.id : '';
+  html=html.replace(/@([^\s@#\+（）()]+)([^@#\+\n]*)/g,(m,n,rest)=>{
+    const rr=RIDERS.find(r=>r.name===n); const rid=rr?rr.id:'';
     return `<a href="#" class="riderLink" data-name="${n}" ${rid?`data-rider-id="${rid}"`:''}>@${n}</a>${rest}`;
   });
-  html = html.replace(/\+("[^"]+"|[\w\u3040-\u30ff\u4e00-\u9faf]+)/g, (m)=> `<a href="#" class="tagLink" data-tag="${m.substring(1)}">${m}</a>`);
+  html=html.replace(/\+("[^"]+"|[\w\u3040-\u30ff\u4e00-\u9faf]+)/g,(m)=>`<a href="#" class="tagLink" data-tag="${m.substring(1)}">${m}</a>`);
   return html;
 }
 
-/* =====================
-   render list
-===================== */
+/* ========== render list ========== */
 function renderList(){
-  const el = document.getElementById('cards');
-  const list = loadEntries().slice().reverse();
-  el.innerHTML = list.map(e=>{
-    const headLeft = e.race && e.race.venue ? `${e.race.date} ${e.race.venue}${e.race.raceNo}R` : (e.at||'').slice(0,10);
-    const resultLink = e.race && e.race.links && e.race.links.result ? `<a href="${e.race.links.result}" target="_blank" rel="noopener">[結果]</a>` : '';
-    const raw = linkifyRaw((e.raw||'').replace(/</g,'&lt;'));
-    const warn = (e.riders||[]).some(r=>!r.id) ? `<span style="color:var(--muted)">⚠ 未解決選手IDあり</span>`:'';
-    const actions = `
-      <div class="card-actions">
-        <button class="linklike editBtn" data-id="${e.id}">編集</button>
-        <button class="linklike delBtn" data-id="${e.id}">削除</button>
-      </div>`;
+  const el=document.getElementById('cards');
+  const list=loadEntries().slice().reverse();
+  el.innerHTML=list.map(e=>{
+    const headLeft=e.race&&e.race.venue?`${e.race.date} ${e.race.venue}${e.race.raceNo}R`:(e.at||'').slice(0,10);
+    const resultLink=e.race&&e.race.links&&e.race.links.result?`<a href="${e.race.links.result}" target="_blank" rel="noopener">[結果]</a>`:'';
+    const raw=linkifyRaw((e.raw||'').replace(/</g,'&lt;'));
+    const warn=(e.riders||[]).some(r=>!r.id)?`<span style="color:var(--muted)">⚠ 未解決選手IDあり</span>`:'';
+    const actions=`<div class="card-actions"><button class="linklike editBtn" data-id="${e.id}">編集</button><button class="linklike delBtn" data-id="${e.id}">削除</button></div>`;
     return `<div class="card" id="card_${e.id}">
       <div class="head"><span class="date">${headLeft}</span> ${resultLink} ${warn} ${actions}</div>
-      <div class="raw">${raw}</div>
-    </div>`;
+      <div class="raw">${raw}</div></div>`;
   }).join('') || '<div class="card" style="color:#9ca3af">（まだメモがありません）</div>';
 }
 
-/* =====================
-   入力ハンドラ
-===================== */
+/* ========== input handlers ========== */
 function updateDropdown(){
-  const tok = getSlashToken(ta.value, lastCaret);
+  const tok=getSlashToken(ta.value, lastCaret);
   if(!tok){ dropdown.style.display='none'; return; }
-  curItems = findCandidates(tok.token);
-  renderDropdown(curItems);
+  curItems=findCandidates(tok.token); renderDropdown(curItems);
 }
-ta.addEventListener('compositionstart', ()=>{ composing = true; });
-ta.addEventListener('compositionend', ()=>{ composing = false; lastCaret = ta.selectionStart; updateDropdown(); });
-ta.addEventListener('input', ()=>{ lastCaret = ta.selectionStart; updateDropdown(); scheduleDraftSave(); queueCaretAdjust(); });
-ta.addEventListener('keyup', (e)=>{ lastCaret = ta.selectionStart; if (e.key === '/' && !composing) updateDropdown(); });
-ta.addEventListener('click', ()=>{ lastCaret = ta.selectionStart; });
-document.addEventListener('selectionchange', ()=>{ if(document.activeElement===ta){ lastCaret = ta.selectionStart; }});
+ta.addEventListener('compositionstart', ()=>{ composing=true; });
+ta.addEventListener('compositionend', ()=>{
+  composing=false; lastCaret=ta.selectionStart; updateDropdown();
+  imeJustEnded=true; setTimeout(()=> imeJustEnded=false, IME_SUPPRESS_MS); // IME直後はEnter/Tab無視
+});
+ta.addEventListener('input', ()=>{ lastCaret=ta.selectionStart; updateDropdown(); scheduleDraftSave(); queueCaretAdjust(); });
+ta.addEventListener('keyup', (e)=>{ lastCaret=ta.selectionStart; if(e.key==='/' && !composing) updateDropdown(); });
+ta.addEventListener('click', ()=>{ lastCaret=ta.selectionStart; });
+document.addEventListener('selectionchange', ()=>{ if(document.activeElement===ta){ lastCaret=ta.selectionStart; }});
 
 ta.addEventListener('keydown', (e)=>{
   if(dropdown.style.display!=='block') return;
   if(e.key==='ArrowDown'){ e.preventDefault(); moveSelection(1); }
   else if(e.key==='ArrowUp'){ e.preventDefault(); moveSelection(-1); }
-  else if(e.key==='Enter' || e.key==='Tab'){ e.preventDefault(); if(ddSel>=0) commitDropdown(ddSel); }
-  else if(e.key==='Escape'){ e.preventDefault(); dropdown.style.display='none'; ddSel = -1; }
+  else if(e.key==='Enter' || e.key==='Tab'){
+    if(imeJustEnded) return; // 変換確定直後は候補確定しない
+    e.preventDefault(); if(ddSel>=0) commitDropdown(ddSel);
+  }else if(e.key==='Escape'){ e.preventDefault(); dropdown.style.display='none'; ddSel=-1; }
 });
 
-/* スラッシュ挿入ボタン */
+/* ▼ スラッシュ挿入 */
 document.getElementById('inlineSlash').addEventListener('click', ()=>{
-  ta.focus();
-  const st = ta.selectionStart;
-  ta.setRangeText('/', st, st, 'end');
-  lastCaret = ta.selectionStart;
-  updateDropdown();
+  ta.focus(); const st=ta.selectionStart; ta.setRangeText('/', st, st, 'end');
+  lastCaret=ta.selectionStart; updateDropdown();
 });
 
-/* ▼ 候補タップ/スクロール判別（スクロール時は確定しない） */
-let tapState = null;
-const TAP_MOVE_TOL = 6; // px
-
+/* ▼ モバイル：スクロールとタップを判別（スクロール中は確定しない） */
+let tapState=null; const TAP_MOVE_TOL=6;
 dropdown.addEventListener('pointerdown', (e)=>{
-  const node = e.target.closest('.item');
-  if(!node) { tapState = null; return; }
-  // スクロールできるように preventDefault はしない
-  tapState = {
-    idx: parseInt(node.dataset.i, 10),
-    x: e.clientX,
-    y: e.clientY,
-    dragged: false,
-    scrollTop0: dropdown.scrollTop
-  };
+  const node=e.target.closest('.item'); if(!node){ tapState=null; return; }
+  tapState={ idx:parseInt(node.dataset.i,10), x:e.clientX, y:e.clientY, dragged:false };
 });
-
 dropdown.addEventListener('pointermove', (e)=>{
   if(!tapState) return;
-  const dx = Math.abs(e.clientX - tapState.x);
-  const dy = Math.abs(e.clientY - tapState.y);
-  if(dx > TAP_MOVE_TOL || dy > TAP_MOVE_TOL) tapState.dragged = true;
+  if(Math.abs(e.clientX-tapState.x)>TAP_MOVE_TOL || Math.abs(e.clientY-tapState.y)>TAP_MOVE_TOL) tapState.dragged=true;
 });
-
-dropdown.addEventListener('scroll', ()=>{
-  if(tapState) tapState.dragged = true; // スクロールしたらドラッグ扱い
-});
-
+dropdown.addEventListener('scroll', ()=>{ if(tapState) tapState.dragged=true; });
 dropdown.addEventListener('pointerup', (e)=>{
   if(!tapState) return;
-  // 指を離した位置が別アイテムでもOK（同じリスト内のタップとして扱う）
-  const node = e.target.closest('.item');
-  const idx  = node ? parseInt(node.dataset.i, 10) : tapState.idx;
-  const moved = tapState.dragged;
-  tapState = null;
-
-  if(!moved){
-    // ここでだけ確定＆既定動作を止める（クリック合成を抑止）
-    e.preventDefault();
-    e.stopPropagation();
-    commitDropdown(idx);
-  }
+  const node=e.target.closest('.item'); const idx=node?parseInt(node.dataset.i,10):tapState.idx;
+  const dragged=tapState.dragged; tapState=null;
+  if(!dragged){ e.preventDefault(); e.stopPropagation(); commitDropdown(idx); }
 });
-
 dropdown.addEventListener('pointercancel', ()=>{ tapState=null; });
 
-
-/* 登録ボタン */
+/* ▼ 登録ボタン */
 document.getElementById('addBtn').addEventListener('click', ()=>{
-  const raw = ta.value.trim();
-  if(!raw){ alert('テキストが空です'); return; }
-  addEntry(raw);
-  ta.value = '';
-  dropdown.style.display='none';
-  renderList();
+  const raw=ta.value.trim(); if(!raw){ alert('テキストが空です'); return; }
+  addEntry(raw); ta.value=''; dropdown.style.display='none'; renderList();
 });
 
 /* draft 保存/復元 */
 let draftTimer=null;
 function scheduleDraftSave(){ clearTimeout(draftTimer); draftTimer=setTimeout(()=>{ saveDraft({text:ta.value, caret:ta.selectionStart, ts:Date.now()}); }, 500); }
-function restoreDraft(){ const d=loadDraft(); if(!d) return; ta.value=d.text||''; const c=d.caret||ta.value.length; ta.setSelectionRange(c,c); lastCaret = c; }
+function restoreDraft(){ const d=loadDraft(); if(!d) return; ta.value=d.text||''; const c=d.caret||ta.value.length; ta.setSelectionRange(c,c); lastCaret=c; }
 
-/* =====================
-   settings & import/export
-===================== */
-const settingsBtn = document.getElementById('settingsBtn');
-const settingsMenu = document.getElementById('settingsMenu');
-settingsBtn.addEventListener('click', ()=>{
-  const open = settingsMenu.style.display==='block';
-  settingsMenu.style.display = open ? 'none' : 'block';
-});
-document.addEventListener('click', (e)=>{
-  if(!settingsMenu.contains(e.target) && e.target!==settingsBtn){
-    settingsMenu.style.display='none';
-  }
-});
+/* ========== settings & import/export ========== */
+const settingsBtn=document.getElementById('settingsBtn');
+const settingsMenu=document.getElementById('settingsMenu');
+settingsBtn.addEventListener('click', ()=>{ const open=settingsMenu.style.display==='block'; settingsMenu.style.display=open?'none':'block'; });
+document.addEventListener('click', (e)=>{ if(!settingsMenu.contains(e.target) && e.target!==settingsBtn){ settingsMenu.style.display='none'; }});
 document.getElementById('importMi').addEventListener('click', ()=>{
   settingsMenu.style.display='none';
-  const inp = Object.assign(document.createElement('input'), {type:'file', accept:'.ndjson,.jsonl'});
-  inp.onchange = async ()=>{
-    const text = await inp.files[0].text();
-    const lines = text.split(/\r?\n/).filter(Boolean);
-    const got = []; let bad = 0;
-    for(const l of lines){ try{ got.push(JSON.parse(l)); }catch{ bad++; } }
-    const cur = loadEntries(); const seen = new Set(cur.map(x=>x.id));
+  const inp=Object.assign(document.createElement('input'),{type:'file',accept:'.ndjson,.jsonl'});
+  inp.onchange=async ()=>{
+    const text=await inp.files[0].text(); const lines=text.split(/\r?\n/).filter(Boolean);
+    const got=[]; let bad=0; for(const l of lines){ try{got.push(JSON.parse(l));}catch{bad++;} }
+    const cur=loadEntries(); const seen=new Set(cur.map(x=>x.id));
     for(const e of got){ if(e && !seen.has(e.id)){ cur.push(e); seen.add(e.id); } }
-    saveEntries(cur); renderList();
-    alert(`インポート完了（新規 ${got.length - bad} 件／壊れ行 ${bad} 件）`);
-    scheduleDriveSave();
+    saveEntries(cur); renderList(); alert(`インポート完了（新規 ${got.length-bad} 件／壊れ行 ${bad} 件）`); scheduleDriveSave();
   };
   inp.click();
 });
 document.getElementById('exportMi').addEventListener('click', ()=>{
   settingsMenu.style.display='none';
-  const nd = loadEntries().map(x=>JSON.stringify(x)).join('\n');
-  const blob = new Blob([nd], {type:'application/x-ndjson'});
-  const a = Object.assign(document.createElement('a'), {href:URL.createObjectURL(blob), download: `mofu_${ymd()}.ndjson`});
+  const nd=loadEntries().map(x=>JSON.stringify(x)).join('\n');
+  const blob=new Blob([nd],{type:'application/x-ndjson'});
+  const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(blob), download:`mofu_${ymd()}.ndjson`});
   a.click(); URL.revokeObjectURL(a.href);
 });
 
-/* =====================
-   search dialog
-===================== */
-const searchDlg = document.getElementById('searchDlg');
-const searchInput = document.getElementById('searchInput');
-document.addEventListener('keydown', (e)=>{
-  if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='k'){ e.preventDefault(); openFullSearch(); }
-});
-function openFullSearch(prefill=''){
-  searchInput.value=prefill;
-  document.getElementById('searchList').innerHTML='';
-  document.getElementById('searchCount').textContent='';
-  searchDlg.showModal();
-  searchInput.focus();
-}
+/* ========== search dialog ========== */
+const searchDlg=document.getElementById('searchDlg');
+const searchInput=document.getElementById('searchInput');
+document.addEventListener('keydown', (e)=>{ if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='k'){ e.preventDefault(); openFullSearch(); }});
+function openFullSearch(prefill=''){ searchInput.value=prefill; document.getElementById('searchList').innerHTML=''; document.getElementById('searchCount').textContent=''; searchDlg.showModal(); searchInput.focus(); }
 document.getElementById('searchClose').addEventListener('click', ()=> searchDlg.close());
-
 let searchTimer=null;
-searchInput.addEventListener('input', ()=>{
-  clearTimeout(searchTimer);
-  searchTimer = setTimeout(runSearch, 300);
-});
+searchInput.addEventListener('input', ()=>{ clearTimeout(searchTimer); searchTimer=setTimeout(runSearch,300); });
 function parseQuery(q){
-  q = (q||'').trim();
-  if(!q) return { terms:[], ors:[], nots:[], fields:{} };
-  const fields={};
-  q = q.replace(/\b(rider|tag|venue|date):(\S+)/g, (_,k,v)=>{ (fields[k]??=[]).push(v); return ' ';});
-  const parts = q.split('|').map(s=>s.trim()).filter(Boolean);
-  const ors = parts.length>1 ? parts : [];
-  let rest = ors.length? '' : q;
-  const nots = []; rest = rest.replace(/\s-(\S+)/g, (_,v)=>{nots.push(v); return ' ';});
-  const terms = (ors.length?[]:rest.split(/\s+/).filter(Boolean));
-  return { terms, ors, nots, fields };
+  q=(q||'').trim(); if(!q) return {terms:[],ors:[],nots:[],fields:{}};
+  const fields={}; q=q.replace(/\b(rider|tag|venue|date):(\S+)/g,(_,k,v)=>{(fields[k]??=[]).push(v); return ' ';});
+  const parts=q.split('|').map(s=>s.trim()).filter(Boolean); const ors=parts.length>1?parts:[];
+  let rest=ors.length?'':q; const nots=[]; rest=rest.replace(/\s-(\S+)/g,(_,v)=>{nots.push(v); return ' ';});
+  const terms=(ors.length?[]:rest.split(/\s+/).filter(Boolean)); return {terms,ors,nots,fields};
 }
 function makeHiliter(words){
-  const sorted = [...words].sort((a,b)=> b.length - a.length);
-  const res = sorted.map(w=> escRe(w));
-  if(!res.length) return s=>s;
-  const re = new RegExp('('+res.join('|')+')','gi');
-  return (s)=> s.replace(re, '<span class="hl">$1</span>');
+  const sorted=[...words].sort((a,b)=>b.length-a.length); const res=sorted.map(w=>escRe(w));
+  if(!res.length) return s=>s; const re=new RegExp('('+res.join('|')+')','gi'); return s=>s.replace(re,'<span class="hl">$1</span>');
 }
 function snippet(raw, query){
   if(!query.length) return raw.slice(0,120);
-  const idx = query.map(w=> raw.toLowerCase().indexOf(w.toLowerCase())).filter(i=>i>=0).sort((a,b)=>a-b)[0] ?? 0;
-  const start = Math.max(0, idx-40), end = Math.min(raw.length, idx+80);
-  return (start>0?'…':'') + raw.slice(start,end) + (end<raw.length?'…':'');
+  const idx=query.map(w=>raw.toLowerCase().indexOf(w.toLowerCase())).filter(i=>i>=0).sort((a,b)=>a-b)[0]??0;
+  const start=Math.max(0,idx-40), end=Math.min(raw.length, idx+80);
+  return (start>0?'…':'')+raw.slice(start,end)+(end<raw.length?'…':'');
 }
 function runSearch(){
-  const q = searchInput.value;
-  const {terms, ors, nots, fields} = parseQuery(q);
-  const all = loadEntries();
-  const hits = [];
-  const orSets = ors.map(tok => new Set(all.filter(e=> e.raw.includes(tok)).map(e=>e.id)));
-  const orSet = orSets.length ? new Set([...orSets[0]].filter(x=> orSets.every(s=> s.has(x)))) : null;
-
+  const q=searchInput.value; const {terms,ors,nots,fields}=parseQuery(q);
+  const all=loadEntries(); const hits=[];
+  const orSets=ors.map(tok=>new Set(all.filter(e=>e.raw.includes(tok)).map(e=>e.id)));
+  const orSet=orSets.length?new Set([...orSets[0]].filter(x=>orSets.every(s=>s.has(x)))):null;
   for(const e of all){
     if(orSet && !orSet.has(e.id)) continue;
-    if(terms.length && !terms.every(t=> e.raw.includes(t))) continue;
-    if(nots.length && nots.some(t=> e.raw.includes(t))) continue;
-    if(fields.rider && !fields.rider.every(idOrName=>{
-      return (e.riders||[]).some(r=> (r.id && String(r.id)===idOrName) || (r.name && r.name.includes(idOrName)));
-    })) continue;
+    if(terms.length && !terms.every(t=>e.raw.includes(t))) continue;
+    if(nots.length && nots.some(t=>e.raw.includes(t))) continue;
+    if(fields.rider && !fields.rider.every(idOrName=> (e.riders||[]).some(r=> (r.id && String(r.id)===idOrName) || (r.name && r.name.includes(idOrName))))) continue;
     if(fields.tag && !fields.tag.every(t=> e.raw.includes('+'+t))) continue;
     if(fields.venue && !(e.race && fields.venue.every(v=> e.race.venue && e.race.venue.includes(v)))) continue;
     if(fields.date && !(e.race && fields.date.every(d=> (e.race.date||'').startsWith(d)))) continue;
     hits.push(e);
   }
-  hits.sort((a,b)=> (b.at||'').localeCompare(a.at||''));
-
-  const words = [...terms, ...ors, ...(fields.rider||[]), ...(fields.tag||[]), ...(fields.venue||[]), ...(fields.date||[])];
-  const hi = makeHiliter(words);
-
-  const html = hits.slice(0,100).map(e=>{
-    const headLeft = e.race && e.race.venue ? `${e.race.date} ${e.race.venue}${e.race.raceNo}R` : (e.at||'').slice(0,10);
-    const snip = snippet(e.raw, words);
-    return `<div class="card result-item">
-      <div class="head"><span class="date">${headLeft}</span>
-        <button class="linklike openCardBtn" data-id="${e.id}">表示</button>
-      </div>
-      <div class="raw result-snippet">${hi(snip.replace(/</g,'&lt;'))}</div>
-    </div>`;
+  hits.sort((a,b)=>(b.at||'').localeCompare(a.at||''));
+  const words=[...terms, ...ors, ...(fields.rider||[]), ...(fields.tag||[]), ...(fields.venue||[]), ...(fields.date||[])];
+  const hi=makeHiliter(words);
+  const html=hits.slice(0,100).map(e=>{
+    const headLeft=e.race&&e.race.venue?`${e.race.date} ${e.race.venue}${e.race.raceNo}R`:(e.at||'').slice(0,10);
+    const snip=snippet(e.raw, words);
+    return `<div class="card result-item"><div class="head"><span class="date">${headLeft}</span>
+      <button class="linklike openCardBtn" data-id="${e.id}">表示</button></div>
+      <div class="raw result-snippet">${hi(snip.replace(/</g,'&lt;'))}</div></div>`;
   }).join('') || '<div class="card" style="color:#9ca3af">（該当なし）</div>';
-
-  document.getElementById('searchList').innerHTML = html;
-  document.getElementById('searchCount').textContent = `${hits.length} 件`;
+  document.getElementById('searchList').innerHTML=html;
+  document.getElementById('searchCount').textContent=`${hits.length} 件`;
 }
 document.getElementById('searchList').addEventListener('click', (e)=>{
-  const btn = e.target.closest('.openCardBtn'); if(!btn) return;
-  const id = btn.dataset.id;
-  searchDlg.close();
-  const node = document.getElementById('card_'+id);
-  if(node){ node.scrollIntoView({behavior:'smooth', block:'center'}); node.classList.add('pulse'); setTimeout(()=>node.classList.remove('pulse'), 1400); }
+  const btn=e.target.closest('.openCardBtn'); if(!btn) return;
+  const id=btn.dataset.id; searchDlg.close();
+  const node=document.getElementById('card_'+id);
+  if(node){ node.scrollIntoView({behavior:'smooth', block:'center'}); node.classList.add('pulse'); setTimeout(()=>node.classList.remove('pulse'),1400); }
 });
 
-/* =====================
-   edit/delete & link clicks
-===================== */
+/* ========== edit/delete & link clicks ========== */
 document.body.addEventListener('click', (e)=>{
-  const editBtn = e.target.closest('.editBtn');
-  const delBtn  = e.target.closest('.delBtn');
+  const editBtn=e.target.closest('.editBtn'); const delBtn=e.target.closest('.delBtn');
   if(editBtn){
-    const id = editBtn.dataset.id;
-    const entry = loadEntries().find(x=>x.id===id);
-    if(!entry) return;
-    document.getElementById('editTa').value = entry.raw || '';
-    const dlg = document.getElementById('editDlg'); dlg.dataset.id = id; dlg.showModal(); return;
+    const id=editBtn.dataset.id; const entry=loadEntries().find(x=>x.id===id); if(!entry) return;
+    document.getElementById('editTa').value=entry.raw||''; const dlg=document.getElementById('editDlg'); dlg.dataset.id=id; dlg.showModal(); return;
   }
-  if(delBtn){
-    const id = delBtn.dataset.id;
-    if(confirm('このメモを削除しますか？')){ deleteEntry(id); }
-    return;
-  }
-  const r = e.target.closest('a.riderLink');
-  if(r){ e.preventDefault(); openFullSearch(r.dataset.riderId ? `rider:${r.dataset.riderId}` : r.dataset.name); }
-  const t = e.target.closest('a.tagLink');
-  if(t){ e.preventDefault(); openFullSearch(`tag:${t.dataset.tag}`); }
+  if(delBtn){ const id=delBtn.dataset.id; if(confirm('このメモを削除しますか？')) deleteEntry(id); return; }
+  const r=e.target.closest('a.riderLink'); if(r){ e.preventDefault(); openFullSearch(r.dataset.riderId?`rider:${r.dataset.riderId}`:r.dataset.name); }
+  const t=e.target.closest('a.tagLink'); if(t){ e.preventDefault(); openFullSearch(`tag:${t.dataset.tag}`); }
 });
 document.getElementById('editSaveBtn').addEventListener('click', (e)=>{
-  e.preventDefault();
-  const dlg = document.getElementById('editDlg');
-  const id  = dlg.dataset.id;
-  const newRaw = document.getElementById('editTa').value;
-  updateEntry(id, newRaw);
-  dlg.close();
+  e.preventDefault(); const dlg=document.getElementById('editDlg');
+  const id=dlg.dataset.id; const newRaw=document.getElementById('editTa').value; updateEntry(id,newRaw); dlg.close();
 });
 
-/* =====================
-   Google Drive 連携
-===================== */
-async function waitForGis(){
-  for(let i=0;i<50;i++){
-    if(window.google?.accounts?.oauth2) return;
-    await new Promise(r=>setTimeout(r,100));
-  }
-  throw new Error('Google Identity Services の読み込みに失敗しました');
-}
-function authHeaders(){
-  if(!accessToken) throw new Error('no access token');
-  return { 'Authorization': `Bearer ${accessToken}` };
-}
-/* Drive API helpers */
+/* ========== Google Drive ========== */
+async function waitForGis(){ for(let i=0;i<50;i++){ if(window.google?.accounts?.oauth2) return; await new Promise(r=>setTimeout(r,100)); } throw new Error('GIS load fail'); }
+function authHeaders(){ if(!accessToken) throw new Error('no access token'); return { 'Authorization': `Bearer ${accessToken}` }; }
 async function driveFindFileIdByName(name=DRIVE_FILENAME){
-  const params = new URLSearchParams({
-    spaces: 'appDataFolder',
-    q: `name='${name.replace(/'/g,"\\'")}' and trashed=false`,
-    fields: 'files(id,name)',
-    pageSize: '1',
-  });
-  const res = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`, { headers: authHeaders() });
-  if(!res.ok) throw new Error(`Drive list failed ${res.status}`);
-  const j = await res.json();
-  return j.files?.[0]?.id || null;
+  const params=new URLSearchParams({spaces:'appDataFolder', q:`name='${name.replace(/'/g,"\\'")}' and trashed=false`, fields:'files(id,name)', pageSize:'1'});
+  const res=await fetch(`https://www.googleapis.com/drive/v3/files?${params}`, {headers:authHeaders()}); if(!res.ok) throw new Error(`Drive list failed ${res.status}`);
+  const j=await res.json(); return j.files?.[0]?.id||null;
 }
 async function driveDownloadFile(fileId){
-  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, { headers: authHeaders() });
-  if(!res.ok) throw new Error(`Drive download failed ${res.status}`);
+  const res=await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {headers:authHeaders()}); if(!res.ok) throw new Error(`Drive download failed ${res.status}`);
   return await res.text();
 }
 async function driveCreateFile(name, content){
-  const meta = { name, parents: ['appDataFolder'] };
-  const boundary = 'mofu_' + Math.random().toString(16).slice(2);
-  const body =
-    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
-    `${JSON.stringify(meta)}\r\n` +
-    `--${boundary}\r\nContent-Type: application/x-ndjson\r\n\r\n` +
-    `${content}\r\n` +
-    `--${boundary}--`;
-  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
-    method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': `multipart/related; boundary=${boundary}` },
-    body
-  });
-  if(!res.ok) throw new Error(`Drive create failed ${res.status}`);
-  const j = await res.json();
-  return j.id;
+  const meta={name, parents:['appDataFolder']}; const boundary='mofu_'+Math.random().toString(16).slice(2);
+  const body=`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n--${boundary}\r\nContent-Type: application/x-ndjson\r\n\r\n${content}\r\n--${boundary}--`;
+  const res=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',{method:'POST', headers:{...authHeaders(),'Content-Type':`multipart/related; boundary=${boundary}`}, body});
+  if(!res.ok) throw new Error(`Drive create failed ${res.status}`); const j=await res.json(); return j.id;
 }
 async function driveUpdateFile(fileId, content){
-  const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
-    method: 'PATCH',
-    headers: { ...authHeaders(), 'Content-Type': 'application/x-ndjson' },
-    body: content
-  });
+  const res=await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {method:'PATCH', headers:{...authHeaders(),'Content-Type':'application/x-ndjson'}, body:content});
   if(!res.ok) throw new Error(`Drive update failed ${res.status}`);
 }
-
-/* NDJSON 変換＆マージ */
 function entriesToNdjson(arr){ return arr.map(x=>JSON.stringify(x)).join('\n'); }
-function ndjsonToEntries(text){
-  if(!text) return [];
-  return text.split(/\r?\n/).filter(Boolean).map(l=> JSON.parse(l));
-}
+function ndjsonToEntries(text){ if(!text) return []; return text.split(/\r?\n/).filter(Boolean).map(l=>JSON.parse(l)); }
 function mergeEntries(localArr, remoteArr){
-  const map = new Map();
-  for(const e of localArr) map.set(e.id, e);
-  for(const r of remoteArr){
-    const cur = map.get(r.id);
-    if(!cur){ map.set(r.id, r); continue; }
-    if((r.at||'') > (cur.at||'')) map.set(r.id, r); // 新しい方を採用
-  }
+  const map=new Map(); for(const e of localArr) map.set(e.id,e);
+  for(const r of remoteArr){ const cur=map.get(r.id); if(!cur){ map.set(r.id,r); continue; } if((r.at||'')>(cur.at||'')) map.set(r.id,r); }
   return Array.from(map.values());
 }
-
-/* 初回接続時：Drive→ローカルに取り込み＆マージ */
 async function syncFromDriveOnce(){
   try{
-    driveFileId = await driveFindFileIdByName();
-    if(!driveFileId){
-      const nd = entriesToNdjson(loadEntries());
-      driveFileId = await driveCreateFile(DRIVE_FILENAME, nd);
-      return;
-    }
-    const remoteText = await driveDownloadFile(driveFileId);
-    const remote = ndjsonToEntries(remoteText);
-    const local = loadEntries();
-    const merged = mergeEntries(local, remote);
-    if(JSON.stringify(local) !== JSON.stringify(merged)){
-      saveEntries(merged);
-      renderList();
-    }
-  }catch(e){
-    console.warn('Drive初回同期に失敗:', e);
-  }
+    driveFileId=await driveFindFileIdByName();
+    if(!driveFileId){ const nd=entriesToNdjson(loadEntries()); driveFileId=await driveCreateFile(DRIVE_FILENAME, nd); return; }
+    const remoteText=await driveDownloadFile(driveFileId);
+    const remote=ndjsonToEntries(remoteText); const local=loadEntries(); const merged=mergeEntries(local, remote);
+    if(JSON.stringify(local)!==JSON.stringify(merged)){ saveEntries(merged); renderList(); }
+  }catch(e){ console.warn('Drive初回同期に失敗:', e); }
 }
-
-/* アクセストークンのサイレント更新 */
 function refreshAccessTokenSilent(){
-  return new Promise(async (resolve, reject)=>{
+  return new Promise(async (resolve,reject)=>{
     try{
       await waitForGis();
       if(!tokenClient){
-        tokenClient = google.accounts.oauth2.initTokenClient({
-          client_id: CLIENT_ID,
-          scope: SCOPE,
-          callback: (resp)=>{
-            if(resp.error){ reject(resp); return; }
-            accessToken = resp.access_token;
-            // 初回同期はここでは呼ばない
-            resolve(resp);
-          }
+        tokenClient=google.accounts.oauth2.initTokenClient({ client_id:CLIENT_ID, scope:SCOPE,
+          callback:(resp)=>{ if(resp.error) reject(resp); else { accessToken=resp.access_token; resolve(resp); } }
         });
       }
       tokenClient.requestAccessToken({prompt:'none'});
     }catch(err){ reject(err); }
   });
 }
-
-/* 変更をDriveに反映（デバウンス＆401時リトライ） */
 function scheduleDriveSave(){
-  if(!accessToken) return; // 未接続
+  if(!accessToken) return;
   clearTimeout(syncTimer);
-  syncTimer = setTimeout(async ()=>{
+  syncTimer=setTimeout(async ()=>{
     try{
-      const nd = entriesToNdjson(loadEntries());
-      if(!driveFileId){
-        driveFileId = await driveFindFileIdByName();
-        if(!driveFileId) driveFileId = await driveCreateFile(DRIVE_FILENAME, nd);
-        else await driveUpdateFile(driveFileId, nd);
-      }else{
-        await driveUpdateFile(driveFileId, nd);
-      }
+      const nd=entriesToNdjson(loadEntries());
+      if(!driveFileId){ driveFileId=await driveFindFileIdByName(); if(!driveFileId) driveFileId=await driveCreateFile(DRIVE_FILENAME, nd); else await driveUpdateFile(driveFileId, nd); }
+      else{ await driveUpdateFile(driveFileId, nd); }
     }catch(e){
-      const msg = String(e||'');
-      if(msg.includes('401') || msg.includes('403')){
+      const msg=String(e||'');
+      if(msg.includes('401')||msg.includes('403')){
         try{
           await refreshAccessTokenSilent();
-          const nd = entriesToNdjson(loadEntries());
-          if(!driveFileId){
-            driveFileId = await driveFindFileIdByName();
-            if(!driveFileId) driveFileId = await driveCreateFile(DRIVE_FILENAME, nd);
-            else await driveUpdateFile(driveFileId, nd);
-          }else{
-            await driveUpdateFile(driveFileId, nd);
-          }
-        }catch(e2){
-          console.warn('Drive保存失敗（再試行も失敗）:', e2);
-        }
-      }else{
-        console.warn('Drive保存失敗:', e);
-      }
+          const nd=entriesToNdjson(loadEntries());
+          if(!driveFileId){ driveFileId=await driveFindFileIdByName(); if(!driveFileId) driveFileId=await driveCreateFile(DRIVE_FILENAME, nd); else await driveUpdateFile(driveFileId, nd); }
+          else{ await driveUpdateFile(driveFileId, nd); }
+        }catch(e2){ console.warn('Drive保存失敗（再試行も失敗）:', e2); }
+      }else{ console.warn('Drive保存失敗:', e); }
     }
   }, SYNC_DEBOUNCE_MS);
 }
-
-/* 接続ボタン */
 async function ensureGisReady(){
-  try{
-    await waitForGis();
-  }catch(e){
-    alert('Googleのライブラリが読み込めませんでした。ネットワークをご確認ください。');
-    return false;
-  }
-  if(!CLIENT_ID || !CLIENT_ID.endsWith('.apps.googleusercontent.com')){
-    alert('GoogleクライアントIDが未設定か不正です。<meta mofu:google-client-id> を設定してください。'); return false;
-  }
+  try{ await waitForGis(); }catch{ alert('Googleのライブラリが読み込めませんでした。'); return false; }
+  if(!CLIENT_ID || !CLIENT_ID.endsWith('.apps.googleusercontent.com')){ alert('GoogleクライアントIDが未設定か不正です。'); return false; }
   if(!ORIGIN_ALLOWED){ alert('このオリジンではDrive連携を無効化しています。'); return false; }
   if(!tokenClient){
-    tokenClient = google.accounts.oauth2.initTokenClient({
-      client_id: CLIENT_ID,
-      scope: SCOPE,
-      callback: (resp)=>{
+    tokenClient=google.accounts.oauth2.initTokenClient({
+      client_id:CLIENT_ID, scope:SCOPE, callback:(resp)=>{
         if(resp.error){ console.error(resp); alert('Google接続に失敗しました'); return; }
-        accessToken = resp.access_token;
-        localStorage.setItem(KEY_USER, JSON.stringify({ hasToken:true, ts:Date.now() }));
-        if(!didInitialDriveSync){
-          didInitialDriveSync = true;
-          syncFromDriveOnce();
-          alert('Googleに接続しました（App Folder 連携の準備OK）');
-        }
+        accessToken=resp.access_token; localStorage.setItem(KEY_USER, JSON.stringify({hasToken:true, ts:Date.now()}));
+        if(!didInitialDriveSync){ didInitialDriveSync=true; syncFromDriveOnce(); alert('Googleに接続しました（App Folder 連携の準備OK）'); }
       }
     });
   }
   return true;
 }
 document.getElementById('connectGoogleBtn').addEventListener('click', async ()=>{
-  if(!await ensureGisReady()) return;
-  tokenClient.requestAccessToken({prompt:'consent'});
+  if(!await ensureGisReady()) return; tokenClient.requestAccessToken({prompt:'consent'});
 });
 document.getElementById('logoutBtn').addEventListener('click', ()=>{
-  localStorage.removeItem(KEY_USER);
-  accessToken=null;
-  alert('この端末のログイン情報を削除しました（ローカルのみ）');
+  localStorage.removeItem(KEY_USER); accessToken=null; alert('この端末のログイン情報を削除しました（ローカルのみ）');
 });
 
-/* =====================
-   init
-===================== */
-function updateDropdownTrigger(){
-  const tok = getSlashToken(ta.value, lastCaret);
-  if(!tok){ dropdown.style.display='none'; return; }
-  curItems = findCandidates(tok.token);
-  renderDropdown(curItems);
-}
+/* ========== init ========== */
+function updateDropdownTrigger(){ const tok=getSlashToken(ta.value, lastCaret); if(!tok){ dropdown.style.display='none'; return; } curItems=findCandidates(tok.token); renderDropdown(curItems); }
 (async function init(){
   restoreDraft();
   await Promise.all([fetchRiders(), fetchRaces()]);
   renderList();
-  // 既存トークンの再利用はユーザー操作時（接続ボタン押下）に更新する運用にしています
 })();
 </script>
 </body>
