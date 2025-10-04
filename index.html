@@ -40,6 +40,9 @@
     dialog{border:none;border-radius:12px;max-width:720px;width:96%;}
     dialog::backdrop{background:rgba(0,0,0,.25)}
     .search-phrase{font-weight:700}
+    .card-actions{margin-left:auto; display:flex; gap:.4rem}
+    .linklike{color:var(--blue); background:transparent; border:none; padding:.2rem .4rem; cursor:pointer}
+    .muted{color:var(--muted)}
   </style>
 </head>
 <body>
@@ -59,11 +62,12 @@
   </header>
 
   <main class="wrap">
-    <div class="hint">「/」でスマート補完（選手／レース／戦法／タグ）。Enterで保存、Shift+Enterで改行。保存は端末ローカル＋（任意で）Google Driveに同期できます。</div>
+    <div class="hint">「/」でスマート補完（選手／レース／戦法／タグ）。登録はボタンで行います（Enterでは登録しません）。Shift+Enterで改行。保存は端末ローカル＋（任意で）Google Driveに同期できます。</div>
 
     <div class="row" style="position:relative;margin:.25rem 0 .5rem">
       <div class="toolbar">
         <button id="inlineSlash" class="slash" title="/ を挿入">/</button>
+        <button id="addBtn" class="btn">登録</button>
       </div>
     </div>
 
@@ -79,6 +83,59 @@
     <div class="footer">データは端末ローカル（IndexedDB/localStorage）に保存。Google Drive同期を有効化した場合でも、あなたのDrive（App Folder）にのみ保存されます。</div>
   </main>
 
+  <!-- 設定ダイアログ（Googleログインの“誘導”だけを用意） -->
+  <dialog id="settingsDlg">
+    <form method="dialog" style="padding:14px 16px; display:grid; gap:12px; max-width:620px;">
+      <h3 style="margin:0;">設定</h3>
+      <p class="muted" style="margin:.25rem 0 0">※ 不特定多数への配布でも、<strong>開発者が発行した1つのクライアントID</strong>を全ユーザーが共有して使います。利用者は自分のGoogleアカウントで<strong>初回のみ</strong>ログイン＆同意すればOKです。</p>
+
+      <label style="display:grid; gap:6px;">
+        <span style="font-size:.9rem;color:#6b7280;">Google クライアントID（開発者のみ設定・末尾が <code>.apps.googleusercontent.com</code>）</span>
+        <input id="inGoogleClientId" type="text" placeholder="xxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxx.apps.googleusercontent.com"
+               style="width:100%;padding:.6rem .7rem;border:1px solid var(--line);border-radius:10px;">
+      </label>
+
+      <label style="display:flex;align-items:center;gap:.6rem;">
+        <input id="inEnableDrive" type="checkbox">
+        <span>Google Drive 同期を有効にする（App FolderにNDJSONを保存）</span>
+      </label>
+
+      <div style="display:flex; gap:.5rem; align-items:center;">
+        <button id="connectGoogleBtn" class="btn" value="none" type="button">Googleに接続（ログイン）</button>
+        <span class="muted" id="connectHint">→ ボタンを押すと、各ユーザーのブラウザでGoogleの同意画面が開きます（初回のみ）。</span>
+      </div>
+
+      <div style="display:flex; gap:.5rem; justify-content:flex-end; margin-top:8px;">
+        <button id="settingsHelpBtn" value="none" type="button">ヘルプ</button>
+        <button value="cancel">閉じる</button>
+        <button id="settingsSaveBtn" value="default" class="btn">保存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- GoogleクライアントIDの取得ガイド（簡易ヘルプ） -->
+  <dialog id="oauthHelpDlg">
+    <div style="padding:14px 16px;display:grid;gap:10px;max-width:720px;">
+      <h3 style="margin:0;">Google クライアントIDの取得ガイド</h3>
+      <ol style="margin:0 0 6px 1.2rem;">
+        <li>Google Cloud Console → プロジェクト作成（例：mofu-memo）</li>
+        <li>OAuth 同意画面：外部／承認済みドメインに <code>github.io</code> を追加／テストユーザーに自分を追加</li>
+        <li>APIを有効化：Google Drive API</li>
+        <li>スコープ：<code>https://www.googleapis.com/auth/drive.appdata</code> を追加（最小権限）</li>
+        <li>クライアント → OAuth クライアント作成（種類：Webアプリ）
+          <ul>
+            <li>Authorized JavaScript origins：<code>https://keirinjingle.github.io</code></li>
+            <li>Authorized redirect URIs：ポップアップ方式なら不要</li>
+          </ul>
+        </li>
+        <li>発行された <strong>クライアントID</strong> を上の欄に貼って保存（シークレットは使いません）</li>
+      </ol>
+      <div style="display:flex;justify-content:flex-end;gap:.5rem;">
+        <button id="oauthHelpClose">閉じる</button>
+      </div>
+    </div>
+  </dialog>
+
   <!-- 串刺し検索の簡易モーダル -->
   <dialog id="searchDlg">
     <div style="padding:12px 14px">
@@ -90,6 +147,18 @@
     </div>
   </dialog>
 
+  <!-- 編集ダイアログ -->
+  <dialog id="editDlg">
+    <form method="dialog" style="padding:14px 16px; display:grid; gap:12px; max-width:720px;">
+      <h3 style="margin:0;">メモを編集</h3>
+      <textarea id="editTa" style="width:100%;min-height:160px;font-size:16px;padding:12px;border:1px solid var(--line);border-radius:12px"></textarea>
+      <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:8px;">
+        <button value="cancel">キャンセル</button>
+        <button id="editSaveBtn" value="default" class="btn">保存</button>
+      </div>
+    </form>
+  </dialog>
+
   <script>
   // =====================
   // 設定（取得先）
@@ -97,20 +166,12 @@
   const RIDERS_URL = 'https://keirinjingle.github.io/keirin-links/senshuID.json';
   const RACES_URL  = (ymd) => `https://keirinjingle.github.io/date/keirin_race_list_${ymd}.json`;
 
-  // Google Drive連携（任意）。クライアントIDを設定しない場合はローカルのみで動作します。
-  const GOOGLE_CLIENT_ID = '';// 例: 'xxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxx.apps.googleusercontent.com'
-
   // =====================
   // ユーティリティ
   // =====================
-  const jst = () => {
-    const d = new Date();
-    // ブラウザのローカルタイムを採用（日本以外でもJST相当のymdを得たい場合はIntlで）
-    return d;
-  };
+  const jst = () => new Date();
   const ymd = (d=jst()) => new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10).replace(/-/g,'');
   const ymd_dash = (d=jst()) => new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);
-  const pad2 = (n)=> (n<10?'0':'')+n;
   const ulid = () => Date.now().toString(36)+crypto.getRandomValues(new Uint8Array(10)).reduce((a,b)=>a+b.toString(16).padStart(2,'0'),'');
 
   // =====================
@@ -133,11 +194,15 @@
   const KEY_ENTRIES = 'mofu:entries:v1';
   const KEY_DRAFT   = 'mofu:draft:v1';
   const KEY_USER    = 'mofu:user:v1';
+  const KEY_SETTINGS= 'mofu:settings:v1';
+
   const loadEntries = ()=> JSON.parse(localStorage.getItem(KEY_ENTRIES)||'[]');
   const saveEntries = (a)=> localStorage.setItem(KEY_ENTRIES, JSON.stringify(a));
   const loadDraft   = ()=> JSON.parse(localStorage.getItem(KEY_DRAFT)||'null');
   const saveDraft   = (d)=> localStorage.setItem(KEY_DRAFT, JSON.stringify(d));
   const clearDraft  = ()=> localStorage.removeItem(KEY_DRAFT);
+  const loadSettings= ()=> JSON.parse(localStorage.getItem(KEY_SETTINGS) || '{}');
+  const saveSettings= (o)=> localStorage.setItem(KEY_SETTINGS, JSON.stringify(o));
 
   // =====================
   // データ読み込み
@@ -151,7 +216,6 @@
     try{
       const res = await fetch(RIDERS_URL, {cache:'no-cache'});
       const arr = await res.json();
-      // 正規化（プロフィールURLのドメイン二重などを修正）
       RIDERS = arr.map(r=>({
         name: r['選手名'],
         ki: extractKi(r['期']),
@@ -187,12 +251,10 @@
   function findCandidates(q){
     const n = norm(q);
     const items = [];
-    // 選手
     if(RIDERS.length && q){
       const list = RIDERS.filter(r=> `${r.name} ${r.region} ${r.ki}`.toLowerCase().includes(n)).slice(0,6);
       items.push(...list.map(r=>({type:'rider', r})));
     }
-    // レース（会場名+数字）
     if(DAYCARDS && DAYCARDS.length){
       const numM = n.match(/(\d{1,2})$/); const maybeNo = numM? parseInt(numM[1],10): null;
       for(const v of DAYCARDS){
@@ -208,9 +270,7 @@
         if(items.length>=8) break;
       }
     }
-    // 戦法
     items.push(...TACTICS.filter(t=>t.includes(q)).map(t=>({type:'tactic', t})));
-    // タグ
     if(q) items.push({type:'tag', tag:q});
     return items.slice(0,8);
   }
@@ -231,13 +291,15 @@
       }
       return `<div class="item" data-i="${i}"><span class="type">タグ</span> +${it.tag}</div>`;
     }).join('');
-    // 位置（簡易）
     const ta = document.getElementById('ta');
     const rect = ta.getBoundingClientRect();
     dd.style.left = (rect.left + 12) + 'px';
     dd.style.top  = (rect.top + 44) + 'px';
     dd.style.display='block';
   }
+
+  // IME合成中フラグ
+  let composing = false;
 
   let curItems = [];
   function updateDropdown(){
@@ -272,21 +334,18 @@
   }
 
   // =====================
-  // 保存 & 一覧
+  // メモ解析・登録・更新・削除
   // =====================
   function raceFromRaw(raw){
-    // 形式: "- 会場名NNR"
     const m = raw.match(/-\s*([\u3040-\u30ff\u4e00-\u9fafA-Za-z]+)(\d{1,2})R/);
     if(!m) return null;
     const venue = m[1]; const raceNo = parseInt(m[2],10);
-    // DAYCARDSからURLを引く（あればrace_idを結果リンクへ流用）
     let resultUrl=null, entryUrl=null;
     const v = (DAYCARDS||[]).find(x=> x.venue===venue);
     if(v){
       const r = v.races.find(x=> x.race_number===raceNo);
       if(r && r.url){
         entryUrl = r.url;
-        // 出走URL → 結果URLに変換（規則に基づく）
         resultUrl = r.url.replace('/entry/', '/result/');
       }
     }
@@ -307,8 +366,23 @@
     renderList();
   }
 
+  function updateEntry(id, newRaw){
+    const arr = loadEntries();
+    const idx = arr.findIndex(e=>e.id===id);
+    if(idx<0) return;
+    const updated = { ...arr[idx], raw: newRaw, ...parseEntities(newRaw) };
+    arr[idx] = updated;
+    saveEntries(arr);
+    renderList();
+  }
+
+  function deleteEntry(id){
+    const arr = loadEntries().filter(e=> e.id!==id);
+    saveEntries(arr);
+    renderList();
+  }
+
   function linkifyRaw(html){
-    // @選手 と +タグ をリンク化
     html = html.replace(/@([^\s@#\+（）()]+)([^@#\+\n]*)/g, (m, n, rest)=> `<a href="#" class="riderLink" data-name="${n}">@${n}</a>${rest}`);
     html = html.replace(/\+("[^"]+"|[\w\u3040-\u30ff\u4e00-\u9faf]+)/g, (m)=> `<a href="#" class="tagLink" data-tag="${m.substring(1)}">${m}</a>`);
     return html;
@@ -320,9 +394,16 @@
     el.innerHTML = list.map(e=>{
       const headLeft = e.race && e.race.venue ? `${e.race.date} ${e.race.venue}${e.race.raceNo}R` : (e.at||'').slice(0,10);
       const resultLink = e.race && e.race.links && e.race.links.result ? `<a href="${e.race.links.result}" target="_blank" rel="noopener">[結果]</a>` : '';
-      const head = `<span class="date">${headLeft}</span> ${resultLink}`;
       const raw = linkifyRaw((e.raw||'').replace(/</g,'&lt;'));
-      return `<div class="card"><div class="head">${head}</div><div class="raw">${raw}</div></div>`;
+      const actions = `
+        <div class="card-actions">
+          <button class="linklike editBtn" data-id="${e.id}">編集</button>
+          <button class="linklike delBtn" data-id="${e.id}">削除</button>
+        </div>`;
+      return `<div class="card">
+        <div class="head"><span class="date">${headLeft}</span> ${resultLink} ${actions}</div>
+        <div class="raw">${raw}</div>
+      </div>`;
     }).join('') || '<div class="card" style="color:#9ca3af">（まだメモがありません）</div>';
   }
 
@@ -330,16 +411,23 @@
   // 入力・イベント
   // =====================
   const ta = document.getElementById('ta');
+  ta.addEventListener('compositionstart', ()=>{ composing = true; });
+  ta.addEventListener('compositionend', ()=>{ composing = false; updateDropdown(); });
   ta.addEventListener('input', ()=>{ updateDropdown(); scheduleDraftSave(); });
   ta.addEventListener('keydown', (e)=>{
     const dd = document.getElementById('dropdown');
     if(e.key==='Enter' && !e.shiftKey){
-      // Enter確定（候補が出ているときは先頭を採用）
-      if(dd.style.display==='block' && curItems.length){ commitDropdown(0); e.preventDefault(); return; }
-      const raw = ta.value.trim(); if(!raw) return; e.preventDefault(); addEntry(raw); ta.value=''; renderList();
+      if (e.isComposing || composing) return; // IME中は無視
+      if(dd.style.display==='block' && curItems.length){
+        // 候補が出ているときのみ、先頭候補を補完
+        commitDropdown(0);
+        e.preventDefault();
+      }
+      return; // Enterでの登録は行わない
     }
     if(e.key==='Escape'){ dd.style.display='none'; }
   });
+
   document.getElementById('dropdown').addEventListener('mousedown', (e)=>{
     const node = e.target.closest('.item'); if(!node) return; commitDropdown(parseInt(node.dataset.i,10)); e.preventDefault();
   });
@@ -349,6 +437,15 @@
   // ドラフト
   let draftTimer=null; function scheduleDraftSave(){ clearTimeout(draftTimer); draftTimer=setTimeout(()=>{ saveDraft({text:ta.value, caret:ta.selectionStart, ts:Date.now()}); }, 500); }
   function restoreDraft(){ const d=loadDraft(); if(!d) return; ta.value=d.text||''; const c=d.caret||ta.value.length; ta.setSelectionRange(c,c); }
+
+  // 「登録」ボタンで送信
+  document.getElementById('addBtn').addEventListener('click', ()=>{
+    const raw = ta.value.trim();
+    if(!raw){ alert('テキストが空です'); return; }
+    addEntry(raw);
+    ta.value='';
+    renderList();
+  });
 
   // エクスポート/インポート
   document.getElementById('exportBtn').addEventListener('click', ()=>{
@@ -370,25 +467,97 @@
     inp.click();
   });
 
-  // ログアウト = この端末のログイン情報（localStorage）を削除
+  // 設定ダイアログ（Googleログイン誘導付き）
+  document.getElementById('settingsBtn').addEventListener('click', ()=>{
+    const st = loadSettings();
+    document.getElementById('inGoogleClientId').value = st.googleClientId || '';
+    document.getElementById('inEnableDrive').checked = !!st.enableDrive;
+    document.getElementById('settingsDlg').showModal();
+  });
+  document.getElementById('settingsSaveBtn').addEventListener('click', (e)=>{
+    e.preventDefault();
+    saveSettings({
+      googleClientId: document.getElementById('inGoogleClientId').value.trim(),
+      enableDrive: document.getElementById('inEnableDrive').checked
+    });
+    document.getElementById('settingsDlg').close();
+    alert('設定を保存しました');
+  });
+
+  // ヘルプ
+  document.getElementById('settingsHelpBtn').addEventListener('click', ()=>{
+    document.getElementById('oauthHelpDlg').showModal();
+  });
+  document.getElementById('oauthHelpClose').addEventListener('click', ()=>{
+    document.getElementById('oauthHelpDlg').close();
+  });
+
+  // Googleに接続（誘導のみ。実際のOAuth開始は未実装）
+  document.getElementById('connectGoogleBtn').addEventListener('click', ()=>{
+    const st = loadSettings();
+    const cid = (st.googleClientId||'').trim();
+    if(!cid){
+      alert('まず「Google クライアントID」を設定してください。\\n（末尾が .apps.googleusercontent.com）');
+      return;
+    }
+    if(!st.enableDrive){
+      alert('「Google Drive 同期を有効にする」にチェックを入れてから実行してください。');
+      return;
+    }
+    // ここで実際は Google Identity Services を用いてポップアップで OAuth を開始します。
+    // この版では“誘導”のみ。ユーザーには初回だけ同意画面が表示される旨を知らせます。
+    alert('準備OKです。\\nこのボタンでGoogleの同意画面を開き、承認後にApp Folderへ保存できるようにします。（実装は後続）');
+  });
+
+  // ログアウト = この端末のログイン情報（localStorage）を削除（アプリ内部のもののみ）
   document.getElementById('logoutBtn').addEventListener('click', ()=>{
     localStorage.removeItem(KEY_USER);
     alert('この端末のログイン情報を削除しました');
   });
 
-  // 同期（将来：Google Driveに送る。今はローカル→そのまま）
+  // 同期（現状はローカル完了）
   document.getElementById('syncBtn').addEventListener('click', ()=>{
-    // Google Drive同期を有効化したらここに実装（App Folderへ当日NDJSONをappend）
-    alert('同期はローカル完了（Google Drive同期は設定後に有効化）');
+    alert('同期はローカル完了（Google Drive同期は、設定でクライアントID設定後に「Googleに接続」を実装すると有効化されます）');
   });
 
-  // 串刺しリンク（@選手 / +タグ）
+  // 串刺しリンク（@選手 / +タグ）とカード操作
   document.body.addEventListener('click', (e)=>{
+    const editBtn = e.target.closest('.editBtn');
+    const delBtn  = e.target.closest('.delBtn');
+    if(editBtn){
+      const id = editBtn.dataset.id;
+      const entry = loadEntries().find(x=>x.id===id);
+      if(!entry) return;
+      const dlg = document.getElementById('editDlg');
+      const editTa = document.getElementById('editTa');
+      editTa.value = entry.raw || '';
+      dlg.dataset.id = id;
+      dlg.showModal();
+      return;
+    }
+    if(delBtn){
+      const id = delBtn.dataset.id;
+      if(confirm('このメモを削除しますか？')){
+        deleteEntry(id);
+      }
+      return;
+    }
+
     const r = e.target.closest('a.riderLink');
     if(r){ e.preventDefault(); openSearch('rider', r.dataset.name); }
     const t = e.target.closest('a.tagLink');
     if(t){ e.preventDefault(); openSearch('tag', t.dataset.tag); }
   });
+
+  document.getElementById('editSaveBtn').addEventListener('click', (e)=>{
+    e.preventDefault();
+    const dlg = document.getElementById('editDlg');
+    const id  = dlg.dataset.id;
+    const newRaw = document.getElementById('editTa').value;
+    updateEntry(id, newRaw);
+    dlg.close();
+  });
+
   function openSearch(kind, phrase){
     const dlg = document.getElementById('searchDlg');
     document.getElementById('searchPhrase').textContent = (kind==='rider'? '@':'+' ) + phrase;
