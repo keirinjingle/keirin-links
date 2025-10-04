@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>もふメモ | Riders/Races + Drive Sync</title>
+<title>もふメモ | Riders/Races + Drive Sync (robust)</title>
 <meta name="description" content="競輪メモ。ローカル保存＋/サジェスト（戦法・選手・レース・タグ）＋素朴検索＋Drive同期。" />
 
 <!-- ▼ あなたの Client ID（.apps.googleusercontent.com で終わる） -->
@@ -40,7 +40,7 @@
   .head .date{font-weight:600}
   .raw{white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.95rem}
   .linklike{color:#2563eb; background:transparent; border:none; padding:.2rem .4rem; cursor:pointer}
-  .footer{color:var(--muted);font-size:.85rem;text-align:center;padding:20px 8px}
+  .footer{color:#6b7280;font-size:.85rem;text-align:center;padding:20px 8px}
 
   /* ▼ ドロップダウン（テキストエリア直下・固定配置） */
   .dropdown{
@@ -105,10 +105,10 @@
 
   <section id="cards" class="cards"></section>
 
-  <div class="footer">データは端末ローカル（localStorage）に保存。Google接続すると App Folder（各ユーザーのDrive）に保存・読込できます。</div>
+  <div class="footer">データはローカル保存。Google接続で Drive(App Folder) 同期が使えます。</div>
 </main>
 
-<!-- 検索ダイアログ（素朴検索） -->
+<!-- 検索 -->
 <dialog id="searchDlg">
   <div style="padding:12px 14px; display:grid; gap:10px;">
     <div style="display:flex;align-items:center;gap:.5rem;justify-content:space-between">
@@ -123,7 +123,7 @@
   </div>
 </dialog>
 
-<!-- 初回同期の向き確認ダイアログ -->
+<!-- 初回同期の向き確認 -->
 <dialog id="syncDlg">
   <form method="dialog" style="padding:14px 16px; display:grid; gap:12px; max-width:720px;">
     <h3 style="margin:0;">Google 同期の初期設定</h3>
@@ -132,28 +132,36 @@
       ※ どちらか一方に<strong>上書き</strong>します。必要なら先にエクスポートでバックアップしてください。
     </div>
     <div style="display:flex; gap:.5rem; justify-content:flex-end">
-      <button value="localToServer" class="btn btn-primary" title="ローカルを正にしてサーバーへ上書き">ローカル→サーバーに上書き</button>
-      <button value="serverToLocal" class="btn" title="サーバーを正にしてローカルへ上書き">サーバー→ローカルに上書き</button>
+      <button value="localToServer" class="btn btn-primary">ローカル→サーバーに上書き</button>
+      <button value="serverToLocal" class="btn">サーバー→ローカルに上書き</button>
       <button value="cancel" class="btn">キャンセル</button>
     </div>
   </form>
 </dialog>
 
 <script>
-/* ====== meta / config ====== */
+/* ========== meta / config ========== */
 const CLIENT_ID = (document.querySelector('meta[name="mofu:google-client-id"]')?.content||'').trim();
 const ALLOWED_ORIGINS = (document.querySelector('meta[name="mofu:allowed-origins"]')?.content||'')
   .split(',').map(s=>s.trim()).filter(Boolean);
 const ORIGIN_ALLOWED = !ALLOWED_ORIGINS.length || ALLOWED_ORIGINS.includes(location.origin);
 
-/* ====== 最小ユーティリティ & 状態 ====== */
-const ta = document.getElementById('ta'); const dropdown = document.getElementById('dropdown');
-const KEY_ENTRIES = 'mofu:entries:mvp2'; // 新キー
+/* ========== 基本状態 & 定数 ========== */
+const ta = document.getElementById('ta');
+const dropdown = document.getElementById('dropdown');
+const riderStatus = document.getElementById('riderStatus');
+const raceStatus  = document.getElementById('raceStatus');
+
+const KEY_ENTRIES = 'mofu:entries:mvp2'; // ← ここが変わると旧データは見えません
+let MEM_ENTRIES = null;                  // メモリキャッシュ
+let STORAGE_OK = true;                   // localStorage が使えるか
 let composing=false, imeJustEnded=false, ddSel=-1, curItems=[], lastCaret=0;
 const IME_SUPPRESS_MS=200;
 
-const riderStatus = document.getElementById('riderStatus');
-const raceStatus  = document.getElementById('raceStatus');
+// サジェストの上限
+const MAX_TOTAL_ITEMS = 30;  // 全体上限（スクロール可）
+const MAX_RACE_ITEMS  = 20;  // レース上限（12R想定で十分）
+
 function setStatus(el, ok, msg){
   const mark = el.querySelector('.mark');
   mark.textContent = ok ? '✅' : `✖${msg?`(${msg})`:''}`;
@@ -161,31 +169,62 @@ function setStatus(el, ok, msg){
   el.classList.toggle('ng', !ok);
 }
 
-/* ====== 外部データ（選手DB・当日レース） ====== */
+/* ========== 外部データ（選手DB・当日レース） ========== */
 const RIDERS_URL = 'https://keirinjingle.github.io/keirin-links/senshuID.json';
 const RACES_URL  = (ymd) => `https://keirinjingle.github.io/date/keirin_race_list_${ymd}.json`;
 
 let RIDERS = [];   // {id,name,region,ki,grade,profile}
 let DAYCARDS = []; // [{venue, races:[{race_number, url, ...}]}]
 
-// JST日付（YYYYMMDD）
-const ymdJST = () => {
-  const d = new Date();
-  const tzAdj = d.getTimezoneOffset() * 60000;
-  return new Date(d.getTime() - tzAdj).toISOString().slice(0,10).replace(/-/g,'');
-};
-/* YYYY-MM-DD （表示用） */
-const ymd_dash = () => {
-  const d = new Date();
-  const tzAdj = d.getTimezoneOffset() * 60000;
-  return new Date(d.getTime() - tzAdj).toISOString().slice(0,10);
+// JST日付
+const ymdJST = () => { const d = new Date(); const tz = d.getTimezoneOffset()*60000; return new Date(d.getTime()-tz).toISOString().slice(0,10).replace(/-/g,''); };
+const ymd_dash = () => { const d = new Date(); const tz = d.getTimezoneOffset()*60000; return new Date(d.getTime()-tz).toISOString().slice(0,10); };
+
+/* ========== localStorage 健全性チェック ========== */
+(function storageHealthCheck(){
+  try{
+    const k = KEY_ENTRIES + ':healthcheck';
+    localStorage.setItem(k, '1');
+    localStorage.removeItem(k);
+    STORAGE_OK = true;
+  }catch(e){
+    console.warn('localStorage が使えません（メモリのみで継続）:', e);
+    STORAGE_OK = false;
+  }
+})();
+
+/* ========== 永続 I/O（堅牢版） ========== */
+const loadEntries = () => {
+  if (MEM_ENTRIES) return MEM_ENTRIES;
+  try {
+    if (!STORAGE_OK) { MEM_ENTRIES = []; return MEM_ENTRIES; }
+    const raw = localStorage.getItem(KEY_ENTRIES);
+    if (!raw) { MEM_ENTRIES = []; return MEM_ENTRIES; }
+    const parsed = JSON.parse(raw);
+    MEM_ENTRIES = Array.isArray(parsed) ? parsed : [];
+    return MEM_ENTRIES;
+  } catch (e) {
+    console.warn('保存データが壊れているため初期化します（バックアップを :corrupt に退避）。', e);
+    try { if (STORAGE_OK) localStorage.setItem(KEY_ENTRIES + ':corrupt', localStorage.getItem(KEY_ENTRIES) || ''); } catch {}
+    MEM_ENTRIES = [];
+    if (STORAGE_OK) localStorage.setItem(KEY_ENTRIES, '[]');
+    return MEM_ENTRIES;
+  }
 };
 
-/* ====== ローカル入出力 ====== */
-const loadEntries=()=>JSON.parse(localStorage.getItem(KEY_ENTRIES)||'[]');
-const saveEntries=(a)=>localStorage.setItem(KEY_ENTRIES, JSON.stringify(a));
+const saveEntries = (arr) => {
+  MEM_ENTRIES = Array.isArray(arr) ? arr : [];
+  if (!STORAGE_OK) return false;
+  try{
+    localStorage.setItem(KEY_ENTRIES, JSON.stringify(MEM_ENTRIES));
+    return true;
+  }catch(e){
+    console.warn('localStorage 保存に失敗（メモリのみ）:', e);
+    return false;
+  }
+};
 
-/* ====== 選手・レース取得 ====== */
+/* ========== 選手・レース取得 ========== */
 function extractKi(kiText){ const m=(kiText||'').match(/(\d+)期/); return m ? `${m[1]}期` : (kiText||''); }
 
 async function fetchRiders(){
@@ -226,7 +265,7 @@ async function fetchRaces(){
   }
 }
 
-/* ====== サジェスト（戦法・選手・レース・タグ） ====== */
+/* ========== サジェスト（戦法・選手・レース・タグ） ========== */
 const TACTICS = ['三分戦','二分戦','単騎','先行一車','まくり','差し','カマシ','自在'];
 
 function getSlashToken(text, caret){
@@ -272,7 +311,7 @@ function findCandidates(q){
         if (pass){
           items.push({ type:'race', v, r: rr });
           pushed++;
-          if (pushed>=8) break outer;
+          if (pushed>=MAX_RACE_ITEMS) break outer;
         }
       }
     }
@@ -281,7 +320,7 @@ function findCandidates(q){
   // 3) タグ
   if (q) items.push({type:'tag', tag:q});
 
-  return items.slice(0, 8);
+  return items.slice(0, MAX_TOTAL_ITEMS);
 }
 
 function renderDropdown(items){
@@ -303,7 +342,7 @@ function renderDropdown(items){
   dropdown.scrollTop=0;
 }
 
-/* ====== ドロップダウン操作（IME安全・固定配置） ====== */
+/* ========== ドロップダウン操作（IME安全・固定配置） ========== */
 function highlightSelection(){
   const nodes=dropdown.querySelectorAll('.item');
   nodes.forEach((n,i)=>n.classList.toggle('is-active', i===ddSel));
@@ -347,7 +386,7 @@ function commitDropdown(idx){
   ta.focus();
 }
 
-/* ====== 入力ハンドラ（IME完全ガード） ====== */
+/* ========== 入力ハンドラ（IME完全ガード） ========== */
 ta.addEventListener('compositionstart', ()=>{ composing=true; });
 ta.addEventListener('compositionend', ()=>{
   composing=false;
@@ -364,9 +403,7 @@ document.addEventListener('selectionchange', ()=>{ if(document.activeElement===t
 ta.addEventListener('keydown', (e)=>{
   if (e.isComposing) return;
   lastCaret = ta.selectionStart;
-
   if (dropdown.style.display!=='block') return;
-
   const tok = getSlashToken(ta.value, lastCaret);
   if (!tok) return;
 
@@ -404,22 +441,40 @@ document.getElementById('inlineSlash').addEventListener('click', ()=>{
   lastCaret=ta.selectionStart; updateDropdown();
 });
 
-/* ====== メモのCRUD（rawのみ保存） ====== */
+/* ========== CRUD（メモリ→UI→保存） ========== */
 function addEntry(raw){
   const entry={ id: Date.now().toString(36)+Math.random().toString(16).slice(2), at:new Date().toISOString(), raw };
-  const arr=loadEntries(); arr.push(entry); saveEntries(arr); renderList(); scheduleDriveSave();
+  const arr = loadEntries().slice();
+  arr.push(entry);
+  const ok = saveEntries(arr);
+  renderList(arr); // 保存失敗でも画面は反映
+  scheduleDriveSave();
+  if (!ok) alert('注意：この環境では保存が制限されている可能性があります（プライベートモード等）。');
 }
 function updateEntry(id, newRaw){
-  const arr=loadEntries(); const i=arr.findIndex(e=>e.id===id); if(i<0) return;
-  arr[i]={ ...arr[i], raw:newRaw, at:new Date().toISOString() }; saveEntries(arr); renderList(); scheduleDriveSave();
+  const arr = loadEntries().slice();
+  const i = arr.findIndex(e=>e.id===id); if(i<0) return;
+  arr[i] = { ...arr[i], raw:newRaw, at:new Date().toISOString() };
+  const ok = saveEntries(arr);
+  renderList(arr);
+  scheduleDriveSave();
+  if (!ok) alert('注意：この環境では保存が制限されています。');
 }
 function deleteEntry(id){
-  const arr=loadEntries().filter(e=>e.id!==id); saveEntries(arr); renderList(); scheduleDriveSave();
+  const arr = loadEntries().filter(e=>e.id!==id);
+  const ok = saveEntries(arr);
+  renderList(arr);
+  scheduleDriveSave();
+  if (!ok) alert('注意：この環境では保存が制限されています。');
 }
 
-/* ====== 出走表・結果リンクの自動差し込み ====== */
+document.getElementById('addBtn').addEventListener('click', ()=>{
+  const raw=ta.value.trim(); if(!raw){ alert('テキストが空です'); return; }
+  addEntry(raw); ta.value=''; dropdown.style.display='none';
+});
+
+/* ========== 出走表・結果リンクの自動差し込み ========== */
 function parseRaceFromRaw(raw){
-  // 例： "- 函館6R" / "- いわき平12R" など
   const m = (raw||'').match(/-\s*([\u3040-\u30ff\u4e00-\u9fafA-Za-z]+)(\d{1,2})R/);
   if(!m) return null;
   const venue = m[1]; const raceNo = parseInt(m[2],10);
@@ -432,15 +487,15 @@ function parseRaceFromRaw(raw){
   return { venue, raceNo, entry, result, date: ymd_dash() };
 }
 
-/* ====== 表示 ====== */
+/* ========== 表示 ========== */
 function linkifyRaw(html){
   html=html.replace(/@([^\s@#\+（）()]+)/g,(m,n)=>`<a href="#" class="riderLink" data-q="@${n}">@${n}</a>`);
   html=html.replace(/\+("[^"]+"|[\w\u3040-\u30ff\u4e00-\u9faf]+)/g,(m)=>`<a href="#" class="tagLink" data-q="${m}">${m}</a>`);
   return html;
 }
-function renderList(){
+function renderList(listOverride){
   const el=document.getElementById('cards');
-  const list=loadEntries().slice().reverse();
+  const list=(listOverride ?? loadEntries()).slice().reverse();
   el.innerHTML=list.map(e=>{
     const headLeft=(e.at||'').slice(0,10);
     const race=parseRaceFromRaw(e.raw||'');
@@ -448,7 +503,6 @@ function renderList(){
       <a href="${race.entry||'#'}" ${race.entry?'target="_blank" rel="noopener"':''}>[出走表]</a>
       ${race.result?`<a href="${race.result}" target="_blank" rel="noopener">[結果]</a>`:''}
     ` : '';
-
     const raw=linkifyRaw((e.raw||'').replace(/</g,'&lt;'));
     const actions=`<div style="margin-left:auto;display:flex;gap:.4rem">
       <button class="linklike editBtn" data-id="${e.id}">編集</button>
@@ -458,8 +512,9 @@ function renderList(){
       <div class="raw">${raw}</div></div>`;
   }).join('') || '<div class="card" style="color:#9ca3af">（まだメモがありません）</div>';
 }
+renderList(loadEntries());
 
-/* ====== 編集・削除・リンクで検索 ====== */
+/* 編集・削除・リンクで検索 */
 document.body.addEventListener('click', (e)=>{
   const editBtn=e.target.closest('.editBtn'); const delBtn=e.target.closest('.delBtn');
   const r=e.target.closest('a.riderLink'); const t=e.target.closest('a.tagLink');
@@ -478,7 +533,7 @@ document.body.addEventListener('click', (e)=>{
   if(t){ e.preventDefault(); openSearch(t.dataset.q); }
 });
 
-/* ====== 素朴検索（Ctrl/Cmd+K） ====== */
+/* ========== 検索 ========== */
 const searchDlg=document.getElementById('searchDlg');
 const searchInput=document.getElementById('searchInput');
 document.getElementById('openSearch').addEventListener('click', ()=>openSearch(''));
@@ -537,7 +592,7 @@ function runSearch(){
   };
 }
 
-/* ====== 設定（インポート／エクスポート） ====== */
+/* ========== 設定（インポート／エクスポートのみ） ========== */
 const settingsBtn=document.getElementById('settingsBtn');
 const settingsMenu=document.getElementById('settingsMenu');
 settingsBtn.addEventListener('click', ()=>{ settingsMenu.style.display = (settingsMenu.style.display==='block') ? 'none' : 'block'; });
@@ -551,9 +606,11 @@ document.getElementById('importMi').addEventListener('click', ()=>{
     const got=[]; let bad=0; for(const l of lines){ try{got.push(JSON.parse(l));}catch{bad++;} }
     const cur=loadEntries(); const seen=new Set(cur.map(x=>x.id));
     for(const e of got){ if(e && !seen.has(e.id)){ cur.push(e); seen.add(e.id); } }
-    localStorage.setItem(KEY_ENTRIES, JSON.stringify(cur));
-    renderList(); alert(`インポート完了（新規 ${got.length-bad} 件／壊れ行 ${bad} 件）`);
+    const ok = saveEntries(cur);
+    renderList(cur);
+    alert(`インポート完了（新規 ${got.length-bad} 件／壊れ行 ${bad} 件）`);
     scheduleDriveSave();
+    if(!ok) alert('注意：この環境では保存が制限されています。');
   };
   inp.click();
 });
@@ -565,7 +622,7 @@ document.getElementById('exportMi').addEventListener('click', ()=>{
   a.click(); URL.revokeObjectURL(a.href);
 });
 
-/* ====== Google Drive 同期（初回は向きを確認） ====== */
+/* ========== Google Drive 同期（初回は向きを確認） ========== */
 const DRIVE_FILENAME='mofu_entries.ndjson';
 let tokenClient=null, accessToken=null, driveFileId=null;
 let didInitialDriveSync=false;
@@ -599,7 +656,6 @@ async function driveUpdateFile(fileId, content){
 
 function entriesToNdjson(arr){ return arr.map(x=>JSON.stringify(x)).join('\n'); }
 function ndjsonToEntries(text){ if(!text) return []; return text.split(/\r?\n/).filter(Boolean).map(l=>JSON.parse(l)); }
-
 function arrayLatestAt(arr){ return arr.reduce((m,e)=> Math.max(m, Date.parse(e.at||0)||0 ), 0); }
 
 async function ensureGisReady(){
@@ -611,11 +667,7 @@ async function ensureGisReady(){
       client_id:CLIENT_ID, scope:SCOPE, callback: async (resp)=>{
         if(resp.error){ console.error(resp); alert('Google接続に失敗しました'); return; }
         accessToken=resp.access_token;
-        // 初回：向き確認
-        if(!didInitialDriveSync){
-          didInitialDriveSync=true;
-          await runInitialSyncFlow();
-        }
+        if(!didInitialDriveSync){ didInitialDriveSync=true; await runInitialSyncFlow(); }
       }
     });
   }
@@ -638,7 +690,6 @@ async function refreshAccessTokenSilent(){
 
 async function runInitialSyncFlow(){
   try{
-    // サーバ側の有無と件数/最終更新を調べる
     driveFileId = await driveFindFileIdByName();
     let serverEntries=[], serverNd='';
     if(driveFileId){
@@ -648,7 +699,6 @@ async function runInitialSyncFlow(){
     const local = loadEntries();
     const localCount = local.length, serverCount=serverEntries.length;
     const localLatest = arrayLatestAt(local), serverLatest = arrayLatestAt(serverEntries);
-
     const fmt = (ts)=> ts? new Date(ts).toISOString().slice(0,19).replace('T',' ') : '—';
     const msgHtml = `
       <div>ローカル：<strong>${localCount}</strong> 件（最終 ${fmt(localLatest)}）</div>
@@ -658,24 +708,19 @@ async function runInitialSyncFlow(){
     const syncDlg=document.getElementById('syncDlg');
     document.getElementById('syncSummary').innerHTML=msgHtml;
     const choice=await new Promise((resolve)=>{
-      syncDlg.addEventListener('close', function h(){
-        syncDlg.removeEventListener('close', h);
-        resolve(syncDlg.returnValue);
-      });
-      syncDlg.showModal();
+      function h(){ syncDlg.removeEventListener('close', h); resolve(syncDlg.returnValue); }
+      syncDlg.addEventListener('close', h); syncDlg.showModal();
     });
 
     if(choice==='localToServer'){
-      // ローカル → サーバー上書き
       const nd=entriesToNdjson(local);
       if(!driveFileId){ driveFileId = await driveCreateFile(DRIVE_FILENAME, nd); }
       else{ await driveUpdateFile(driveFileId, nd); }
       alert('サーバーへ上書きしました。以後は自動同期します。');
     }else if(choice==='serverToLocal'){
-      // サーバー → ローカル上書き
-      const toStore = serverEntries;
-      localStorage.setItem(KEY_ENTRIES, JSON.stringify(toStore));
-      renderList();
+      localStorage.setItem(KEY_ENTRIES, JSON.stringify(serverEntries));
+      MEM_ENTRIES = serverEntries;
+      renderList(serverEntries);
       alert('ローカルへ上書きしました。以後は自動同期します。');
     }else{
       alert('同期設定をキャンセルしました。（いつでも「Googleログイン」から再設定できます）');
@@ -687,7 +732,7 @@ async function runInitialSyncFlow(){
 }
 
 function scheduleDriveSave(){
-  if(!accessToken) return; // 未ログインなら何もしない
+  if(!accessToken) return;
   clearTimeout(syncTimer);
   syncTimer=setTimeout(async ()=>{
     try{
@@ -713,17 +758,17 @@ document.getElementById('connectGoogleBtn').addEventListener('click', async ()=>
   tokenClient.requestAccessToken({prompt:'consent'});
 });
 
-/* ====== 初期化 ====== */
+/* ========== 初期化 ========== */
 (async () => {
   setStatus(riderStatus, false, '…');
   setStatus(raceStatus,  false, '…');
-  renderList();
+  renderList(loadEntries());
   await Promise.allSettled([ fetchRiders(), fetchRaces() ]);
   lastCaret = ta.selectionStart;
   updateDropdown();
 })();
 
-/* ====== サジェスト更新トリガ ====== */
+/* ========== サジェスト更新トリガ ========== */
 function updateDropdown(){
   const tok=getSlashToken(ta.value, lastCaret);
   if (!tok){ dropdown.style.display='none'; return; }
