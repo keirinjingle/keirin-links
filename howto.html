@@ -31,7 +31,8 @@
     *{box-sizing:border-box}
     html,body{height:100%}
     body{
-      margin:0; background:var(--bg); color:var(--ink); font:16px/1.65 system-ui, -apple-system, Segoe UI, Roboto, Noto Sans JP, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      margin:0; background:var(--bg); color:var(--ink);
+      font:16px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
     }
     a{color:inherit}
     .container{max-width:960px;margin:0 auto;padding:24px}
@@ -63,7 +64,7 @@
     .toc a{display:block; padding:6px 8px; border-radius:8px; color:var(--muted); text-decoration:none}
     .toc a:hover{background:color-mix(in oklab, var(--card), var(--ink) 8%); color:var(--ink)}
     section{background:var(--card); border:1px solid var(--border); border-radius:16px; padding:20px}
-<br>    h2{margin:.2em 0 .6em;}
+    h2{margin:.2em 0 .6em;}
     h3{margin:1.2em 0 .4em}
     ul,ol{margin:0 0 1em 1.2em}
     .note{border-left:4px solid var(--accent); padding:8px 12px; background:color-mix(in oklab, var(--card), var(--accent) 3%); border-radius:8px}
@@ -74,28 +75,29 @@
 </head>
 <body>
   <header>
-    <nav class="nav">
+    <nav class="nav" role="navigation" aria-label="もふメモ メインナビ">
       <div class="brand">🐾 もふメモ</div>
       <span class="spacer"></span>
+      <!-- リンクはサイト構成に合わせて適宜編集してください -->
       <a class="btn btn-accent" href="https://keirinjingle.github.io/keirin-links/donation.html" target="_blank" rel="noopener">寄付！</a>
+      <a class="btn" href="index.html">戻る（メイン）</a>
       <a class="btn" href="#google-connect">Google接続</a>
       <a class="btn" href="#settings">設定</a>
-      <a class="btn" href="#logout">ログアウト</a>
     </nav>
   </header>
 
   <div class="container">
-    <div class="hero">
+    <div class="hero" role="region" aria-label="もふメモの紹介">
       <div style="flex:1">
         <h1>もふメモの使い方（How To）</h1>
-        <div class="chip">最短1分でスタート / オフライン保存 & Google Drive 同期対応</div>
+        <div class="chip">最短1分でスタート / オフライン保存 &amp; Google Drive 同期対応</div>
         <p style="margin:.8em 0 0; color:var(--muted)">このページでは、基本操作、補完の使い方、同期、寄付、FAQまでをコンパクトに説明します。</p>
       </div>
     </div>
 
     <div class="grid" style="margin-top:16px">
       <aside>
-        <div class="toc">
+        <div class="toc" aria-label="目次">
           <h3>目次</h3>
           <a href="#flow">基本の流れ</a>
           <a href="#storage">データの保存先</a>
@@ -107,38 +109,51 @@
       </aside>
 
       <main>
-        <section id="flow">
-          <h2>基本の流れ</h2>
+        <section id="flow" aria-labelledby="flow-heading">
+          <h2 id="flow-heading">基本の流れ</h2>
           <ol>
-            <li><strong>メモを入力</strong><br>画面のテキストフィールドに自由に入力できます。<br> <span class="note">ヒント：<code class="kbd">/</code> で補完を開けます（選手／当日レース／戦法／タグ）。</span></li>
-            <li><strong>補足記号</strong><br>戦法は「<code class="kbd">#三分戦</code>」のように <strong>#</strong> を付ける、タグは「<code class="kbd">+メモ</code>」のように <strong>+</strong> を付けて入力。</li>
-            <li><strong>保存</strong><br>入力後、［登録］ボタンを押すとメモが保存されます。</li>
+            <li>
+              <strong>メモを入力</strong><br>
+              画面のテキストフィールドに自由に入力できます。
+              <div class="note" style="margin-top:8px">
+                ヒント：<code class="kbd">/</code> で補完を開けます（選手／当日レース／戦法／タグ）。
+              </div>
+            </li>
+            <li style="margin-top:0.6em">
+              <strong>補足記号</strong><br>
+              戦法は「<code class="kbd">#三分戦</code>」のように <strong>#</strong> を付ける、タグは「<code class="kbd">+メモ</code>」のように <strong>+</strong> を付けて入力。
+            </li>
+            <li style="margin-top:0.6em">
+              <strong>保存</strong><br>
+              入力後、［登録］ボタンを押すとメモが保存されます。
+            </li>
           </ol>
         </section>
 
-        <section id="storage">
-          <h2>データの保存先</h2>
+        <section id="storage" aria-labelledby="storage-heading">
+          <h2 id="storage-heading">データの保存先</h2>
           <ul>
             <li>データはまず <strong>端末内</strong> に保存されます（オフラインOK）。</li>
             <li>上部メニューの <strong>Google接続</strong> を行うと、Google Drive の <strong>App Folder</strong> に自動同期され、複数端末で共有できます。</li>
           </ul>
-          <p class="note" id="google-connect">初回のみ Google へのログイン＆同意が必要です。App Folder はアプリ専用フォルダで、通常の Drive 画面からは直接見えません。</p>
+          <p class="note" id="google-connect" style="margin-top:8px">初回のみ Google へのログイン＆同意が必要です。App Folder はアプリ専用フォルダで、通常の Drive 画面からは直接見えません。</p>
         </section>
 
-        <section id="menu">
-          <h2>上部メニューの機能</h2>
+        <section id="menu" aria-labelledby="menu-heading">
+          <h2 id="menu-heading">上部メニューの機能</h2>
           <ul>
-            <li><strong>寄付！</strong> — 気に入ったらぜひ応援をお願いします。<br>
+            <li>
+              <strong>寄付！</strong> — 気に入ったらぜひ応援をお願いします。<br>
               <a class="btn btn-accent" href="https://keirinjingle.github.io/keirin-links/donation.html" target="_blank" rel="noopener">コーヒー一杯ぶんの寄付はこちら ☕</a>
             </li>
-            <li><strong>Google接続</strong> — Google アカウントにログインし、Drive に同期できます。</li>
-            <li id="settings"><strong>設定</strong> — サウンドや通知など、アプリの動作を調整できます。</li>
-            <li id="logout"><strong>ログアウト</strong> — Google アカウント接続を解除します。</li>
+            <li style="margin-top:.6em"><strong>Google接続</strong> — Google アカウントにログインし、Drive に同期できます。</li>
+            <li style="margin-top:.6em" id="settings"><strong>設定</strong> — サウンドや通知など、アプリの動作を調整できます。</li>
+            <li style="margin-top:.6em"><strong>ログアウト</strong> — Google アカウント接続を解除します。</li>
           </ul>
         </section>
 
-        <section id="completion">
-          <h2>補完機能の例</h2>
+        <section id="completion" aria-labelledby="completion-heading">
+          <h2 id="completion-heading">補完機能の例</h2>
           <ul>
             <li><code class="kbd">/</code> → 選手リストやレース一覧を呼び出す</li>
             <li><code class="kbd">#</code> → 戦法（例：<code class="kbd">#三分戦</code>）</li>
@@ -146,15 +161,17 @@
           </ul>
         </section>
 
-        <section id="notes">
-          <h2>注意点</h2>
+        <section id="notes" aria-labelledby="notes-heading">
+          <h2 id="notes-heading">注意点</h2>
           <ul>
             <li>Drive 同期は最初の 1 回だけログイン操作が必要です。</li>
             <li>端末のストレージを初期化するとデータは消えます。Google 接続を有効にしていれば再同期できます。</li>
+          </ul>
         </section>
 
-        <section id="faq">
-          <h2>よくある質問（FAQ）</h2>
+        <section id="faq" aria-labelledby="faq-heading">
+          <h2 id="faq-heading">よくある質問（FAQ）</h2>
+
           <h3>Q. データが消えることはありますか？</h3>
           <p>端末の初期化などを行うと端末内データは消えます。Google Drive に接続していれば、再同期で復元できます。</p>
 
@@ -165,8 +182,8 @@
           <p>保存先は自分の端末と Google Drive の専用フォルダのみです（共有設定を行わない限り第三者からは見えません）。</p>
         </section>
 
-        <section>
-          <h2>ひとこと</h2>
+        <section aria-labelledby="footer-note">
+          <h2 id="footer-note">ひとこと</h2>
           <p>「もふメモ」は、<strong>シンプルに残したいことをすぐ記録できる</strong> メモアプリです。思いつきも、レース情報も、気軽に書き留めてください🐾</p>
         </section>
       </main>
