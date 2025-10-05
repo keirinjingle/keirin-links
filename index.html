@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>もふメモ</title>
+<title>もふメモ | Riders/Races + Drive Sync (robust + race search)</title>
 <meta name="description" content="競輪メモ。ローカル保存＋/サジェスト（戦法・選手・レース・タグ）＋素朴検索＋Drive同期＋レース検索。" />
 
 <!-- ▼ あなたの Client ID（.apps.googleusercontent.com で終わる） -->
@@ -16,303 +16,1293 @@
 
 <style>
 :root{
-  --bg:#FAFAFA; --fg:#1F2937; --muted:#6B7280; --line:#E5E7EB;
-  --card:#FFFFFF; --accent:#2563EB; --accent-ink:#fff; --danger:#DC2626;
-  --ok:#16A34A; --warn:#F59E0B; --hl:#FEF3C7; --shadow-sm:0 1px 2px rgba(0,0,0,.06); --shadow-md:0 6px 18px rgba(0,0,0,.08);
+  /* 基調カラー */
+  --bg:#fafaf9;        /* 背景 */
+  --card:#ffffff;      /* カード背景 */
+  --fg:#0f172a;        /* 文字 */
+  --muted:#6b7280;     /* 補助文字 */
+  --line:#e5e7eb;      /* 枠線 */
+  --brand:#2563eb;     /* アクセント */
+  --brand-weak:#eff6ff;
+  --success:#10b981;
+  --danger:#ef4444;
+  --warn:#f59e0b;
+  --hl:#fff7cc;
+
+  /* 影・丸み */
+  --radius:14px;
+  --radius-sm:10px;
+  --shadow-sm:0 2px 6px rgba(15,23,42,.06);
+  --shadow-md:0 8px 24px rgba(15,23,42,.08);
+  --shadow-lg:0 20px 40px rgba(15,23,42,.10);
 }
+
+/* 自動ダークモード（ユーザーの設定に追従） */
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0b1220;
+    --card:#0f172a;
+    --fg:#e5e7eb;
+    --muted:#94a3b8;
+    --line:#1f2937;
+    --brand:#60a5fa;
+    --brand-weak:#0b1b34;
+    --success:#34d399;
+    --danger:#f87171;
+    --warn:#fbbf24;
+    --hl:#2b2633;
+  }
+}
+
+/* ベース */
 *{box-sizing:border-box}
-html,body{margin:0;padding:0}
+html,body{height:100%}
 body{
-  font-family:system-ui,-apple-system,Segoe UI,Roboto,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
-  background:var(--bg); color:var(--fg); line-height:1.6;
+  margin:0;
+  font-family: ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,
+               "Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+  color:var(--fg);
+  background:radial-gradient(1200px 600px at 20% -10%, rgba(37,99,235,.06), transparent 60%),
+             radial-gradient(900px 500px at 100% -10%, rgba(16,185,129,.06), transparent 55%),
+             var(--bg);
 }
 
-/* Header (1段) */
-header{position:sticky;top:0;background:var(--card);border-bottom:1px solid var(--line);z-index:30}
+/* ヘッダー */
+header{
+  position:sticky; top:0; z-index:40;
+  backdrop-filter: saturate(120%) blur(8px);
+  background:color-mix(in oklab, var(--card) 92%, transparent);
+  border-bottom:1px solid var(--line);
+}
 .bar{
-  display:flex; align-items:center; gap:.75rem;
+  display:flex; align-items:center; gap:.6rem;
   padding:.65rem .9rem; flex-wrap:wrap;
+  max-width:1000px; margin:0 auto;
 }
-.title{font-weight:800; font-size:1.1rem}
+.title{
+  font-weight:800; letter-spacing:.2px; margin-right:auto;
+  display:flex; align-items:center; gap:.4rem;
+}
+.title::after{
+  content:"beta";
+  font-size:.65rem; color:var(--brand);
+  border:1px solid color-mix(in oklab, var(--brand) 60%, var(--line));
+  border-radius:999px; padding:.05rem .4rem;
+}
 
-/* 右側ナビ（使い方/設定/寄付） */
-.nav-right{margin-left:auto; display:flex; align-items:center; gap:.5rem; flex-wrap:wrap}
-.nav-right .links{display:flex; gap:.35rem; align-items:center}
-.nav-right .links a{padding:.35rem .55rem; border-radius:.5rem; color:#374151}
+/* レイアウト */
+.wrap{max-width:900px;margin:16px auto;padding:0 12px}
 
-/* ボタン */
+/* テキストエリア */
+textarea{
+  width:100%; min-height:132px; font-size:16px; line-height:1.65;
+  padding:14px 14px 48px; resize:vertical;
+  color:var(--fg);
+  background:linear-gradient(180deg, color-mix(in oklab, var(--card) 98%, transparent) 0%,
+                                     color-mix(in oklab, var(--card) 92%, transparent) 100%);
+  border:1px solid var(--line); border-radius:var(--radius);
+  box-shadow:var(--shadow-sm);
+  transition:border-color .18s ease, box-shadow .18s ease, background .18s ease;
+}
+textarea:focus-visible{
+  outline:none;
+  border-color:color-mix(in oklab, var(--brand) 55%, var(--line));
+  box-shadow:0 0 0 3px color-mix(in oklab, var(--brand) 20%, transparent);
+}
+
+/* ツールバー */
+.toolbar{display:flex; gap:.55rem; align-items:center; flex-wrap:wrap; margin:.5rem 0 .6rem}
 .btn{
-  appearance:none; border:1px solid var(--line); background:var(--card); color:var(--fg);
-  padding:.45rem .7rem; border-radius:.55rem; cursor:pointer;
+  appearance:none; cursor:pointer;
+  border:1px solid var(--line);
+  background:linear-gradient(180deg, var(--card), color-mix(in oklab, var(--card) 92%, transparent));
+  color:var(--fg);
+  padding:.55rem .9rem; font-size:.95rem; border-radius:12px;
+  box-shadow:var(--shadow-sm);
+  transition:transform .06s ease, box-shadow .18s ease, border-color .18s ease, background .18s ease;
+}
+.btn:hover{ box-shadow:var(--shadow-md) }
+.btn:active{ transform:translateY(1px) }
+.btn:focus-visible{ outline:none; box-shadow:0 0 0 3px color-mix(in oklab, var(--brand) 20%, transparent) }
+
+.btn-primary{
+  background:linear-gradient(180deg, color-mix(in oklab, var(--brand) 16%, var(--card)),
+                                     color-mix(in oklab, var(--brand) 8%, var(--card)));
+  border-color:color-mix(in oklab, var(--brand) 45%, var(--line));
+}
+.btn-primary:hover{
+  background:linear-gradient(180deg, color-mix(in oklab, var(--brand) 22%, var(--card)),
+                                     color-mix(in oklab, var(--brand) 12%, var(--card)));
+}
+.btn-link{
+  color:var(--brand); text-decoration:none;
+  border:1px solid var(--line); background:var(--card);
+  padding:.45rem .7rem; border-radius:12px;
+  transition:background .18s ease, color .18s ease, border-color .18s ease;
+}
+.btn-link:hover{ background:var(--brand-weak); border-color:color-mix(in oklab, var(--brand) 30%, var(--line)) }
+
+.linklike{
+  color:var(--brand); background:transparent; border:none;
+  padding:.25rem .35rem; cursor:pointer; border-radius:8px;
+}
+.linklike:hover{ background:var(--brand-weak) }
+
+/* カード */
+.cards{margin-top:14px}
+.card{
+  padding:12px 14px; border:1px solid var(--line); border-radius:var(--radius);
+  background:var(--card); margin-bottom:12px; box-shadow:var(--shadow-sm);
+}
+.card:hover{ box-shadow:var(--shadow-md) }
+.head{
+  font-size:.95rem; margin-bottom:6px; display:flex; gap:.5rem; flex-wrap:wrap; align-items:center
+}
+.head .date{ font-weight:700 }
+.raw{ white-space:pre-wrap; word-break:break-word; font-family: ui-sans-serif, "Noto Sans JP", sans-serif; }
+.footer{ color:var(--muted); font-size:.85rem; text-align:center; padding:22px 8px }
+
+/* ドロップダウン（テキストエリア下・フローティング） */
+#taWrap{ position:relative }
+.dropdown{
+  position:absolute; left:0; right:0; top:100%; margin-top:8px;
+  border:1px solid var(--line); border-radius:var(--radius);
+  background:var(--card); display:none; overflow:auto; max-height:320px; z-index:50;
+  box-shadow:var(--shadow-lg);
+  padding:6px;
+  overscroll-behavior: contain; -webkit-overflow-scrolling: touch; touch-action: pan-y;
+}
+.item{
+  padding:.6rem .7rem; cursor:pointer; font-size:.95rem;
+  display:flex; gap:.6rem; align-items:center; border-radius:10px;
+  transition:background .12s ease;
+}
+.item:hover{ background:color-mix(in oklab, var(--brand) 8%, transparent) }
+.item.is-active{ background:color-mix(in oklab, var(--brand) 14%, transparent) }
+.type{
+  font-size:.7rem; color:var(--brand);
+  border:1px solid color-mix(in oklab, var(--brand) 50%, var(--line));
+  background:var(--brand-weak);
+  border-radius:999px; padding:0 .45rem
+}
+
+/* ダイアログ */
+dialog{
+  border:none; border-radius:var(--radius); max-width:860px; width:96%;
+  background:var(--card); color:var(--fg); box-shadow:var(--shadow-lg);
+}
+dialog::backdrop{ background:rgba(0,0,0,.35) }
+.hl{ background:var(--hl); font-weight:700; padding:.05em .15em; border-radius:.25em }
+
+/* バッジ */
+.badge{
+  display:inline-flex; align-items:center; gap:.35rem;
+  padding:.22rem .55rem; border:1px solid var(--line); border-radius:999px;
+  font-size:.8rem; background:var(--card);
+}
+.ok{ color:var(--success) } .ng{ color:var(--danger) }
+
+/* 設定メニュー */
+.settings{ position:relative }
+.settings-menu{
+  position:absolute; right:0; top:calc(100% + 8px); z-index:60;
+  min-width:240px; background:var(--card); border:1px solid var(--line);
+  border-radius:12px; box-shadow:var(--shadow-lg); display:none; overflow:hidden;
+}
+.settings-menu .mi{
+  padding:.7rem .9rem; cursor:pointer; border-bottom:1px solid color-mix(in oklab, var(--line) 80%, transparent);
+  transition:background .12s ease;
+}
+.settings-menu .mi:last-child{ border-bottom:none }
+.settings-menu .mi:hover{ background:var(--brand-weak) }
+
+/* 検索タブ */
+.tabs{
+  display:flex; gap:.4rem; border-bottom:1px solid var(--line); padding:0 .2rem; margin-top:.25rem
+}
+.tab{
+  appearance:none; background:transparent; border:none; cursor:pointer;
+  padding:.75rem .9rem; border-bottom:2px solid transparent; border-radius:8px 8px 0 0;
+  color:var(--muted); font-weight:600; transition:color .18s ease, border-color .18s ease, background .18s ease;
+}
+.tab:hover{ background:color-mix(in oklab, var(--brand) 8%, transparent) }
+.tab.is-active{ border-color:var(--brand); color:var(--fg) }
+.tabpanel{ display:none; padding:.9rem 0 }
+.tabpanel.is-active{ display:block }
+
+/* 入力やラベル */
+.list{ display:grid; gap:.6rem }
+.pill{
+  display:inline-flex; align-items:center; gap:.35rem;
+  border:1px solid var(--line); border-radius:999px; padding:.25rem .6rem; font-size:.85rem;
+  background:color-mix(in oklab, var(--brand) 6%, transparent);
+}
+.muted{ color:var(--muted) }
+.small{ font-size:.86rem }
+.kbd{
+  font-family:ui-monospace, Menlo, monospace; padding:0 .35rem;
+  border:1px solid var(--line); border-radius:.35rem; background:color-mix(in oklab, var(--card) 88%, transparent)
+}
+
+/* レース候補 */
+.race-suggest{
+  max-height:42vh; overflow:auto; border:1px solid var(--line);
+  border-radius:var(--radius-sm); padding:.35rem; background:var(--card);
   box-shadow:var(--shadow-sm);
 }
-.btn:hover{background:#F9FAFB}
-.btn.primary{background:var(--accent); color:var(--accent-ink); border-color:transparent}
-.btn.ghost{border-color:transparent; background:transparent}
+.race-suggest .row{
+  padding:.55rem .65rem; border-radius:10px; cursor:pointer;
+  transition:background .12s ease, transform .06s ease;
+}
+.race-suggest .row:hover{ background:color-mix(in oklab, var(--brand) 8%, transparent) }
+.race-suggest .row:active{ transform:translateY(1px) }
 
-/* メイン */
-main{max-width:900px; margin:1rem auto; padding:0 1rem}
+/* 選手リスト & ノート */
+.player-list{ display:grid; gap:.5rem }
+.player-item{
+  padding:.55rem .65rem; border:1px solid var(--line); border-radius:10px; cursor:pointer;
+  background:var(--card); transition:background .12s ease, transform .06s ease, box-shadow .18s ease;
+  box-shadow:var(--shadow-sm);
+}
+.player-item:hover{ background:var(--brand-weak); box-shadow:var(--shadow-md) }
+.note-list .note{
+  padding:.55rem .65rem; border:1px solid var(--line); border-radius:10px;
+  background:var(--card); box-shadow:var(--shadow-sm);
+}
 
-/* サジェストの注意 */
-.hint{font-size:.9rem; color:var(--muted); background:var(--hl); padding:.5rem .7rem; border-radius:.5rem}
+/* インプット */
+input[type="text"]{
+  background:var(--card); color:var(--fg);
+  border:1px solid var(--line); border-radius:.6rem;
+  padding:.5rem .65rem; outline:none;
+  transition:border-color .18s ease, box-shadow .18s ease, background .18s ease;
+}
+input[type="text"]:focus{
+  border-color:color-mix(in oklab, var(--brand) 45%, var(--line));
+  box-shadow:0 0 0 3px color-mix(in oklab, var(--brand) 20%, transparent);
+}
 
-/* 検索ダイアログ（簡易） */
-dialog{border:none; border-radius:12px; padding:0; width:min(880px, 96vw); box-shadow:var(--shadow-md)}
-dialog .dlg-head{display:flex; justify-content:space-between; align-items:center; padding:.8rem 1rem; border-bottom:1px solid var(--line)}
-dialog .dlg-body{padding:1rem}
-dialog .dlg-foot{display:flex; justify-content:flex-end; gap:.5rem; padding:1rem; border-top:1px solid var(--line)}
+/* スクロールバー（WebKit） */
+.dropdown::-webkit-scrollbar,
+.race-suggest::-webkit-scrollbar{ width:10px; height:10px }
+.dropdown::-webkit-scrollbar-thumb,
+.race-suggest::-webkit-scrollbar-thumb{
+  background:color-mix(in oklab, var(--fg) 12%, transparent);
+  border-radius:999px;
+}
+.dropdown::-webkit-scrollbar-track,
+.race-suggest::-webkit-scrollbar-track{ background:transparent }
 
-textarea{width:100%; min-height:110px; padding:.6rem .7rem; border:1px solid var(--line); border-radius:.5rem; resize:vertical}
-hr{border:none; border-top:1px solid var(--line); margin:1rem 0}
+/* 低モーション環境 */
+@media (prefers-reduced-motion: reduce){
+  *{ transition:none !important; animation:none !important }
+}
+
+/* 余白微調整（小画面） */
+@media (max-width: 480px){
+  .bar{ padding:.55rem .7rem }
+  .toolbar{ gap:.45rem }
+  .btn, .btn-link{ padding:.5rem .75rem; border-radius:10px }
+}
 </style>
 </head>
-
 <body>
-  <header>
-    <div class="bar">
-      <div class="title">🐾 もふメモ</div>
-      <div class="nav-right">
-        <div class="links">
-          <a href="#" id="howtoLink" class="btn ghost">使い方</a>
-          <div class="dropdown">
-            <button class="btn" id="settingsBtn">設定 ▾</button>
-          </div>
-          <a href="#" id="donateLink" class="btn ghost">寄付</a>
-        </div>
+<header>
+  <!-- 上段：タイトル＋ステータス -->
+  <div class="bar">
+    <div class="title">🐾 もふメモ</div>
+    <span id="riderStatus" class="badge">選手DB <span class="mark">…</span></span>
+    <span id="raceStatus" class="badge">レース情報 <span class="mark">…</span></span>
+  </div>
+  <!-- 下段：右寄せのリンク群（使い方／設定／寄付） -->
+  <div class="bar">
+    <div style="flex:1"></div>
+    <a class="btn-link" href="https://keirinjingle.github.io/keirin-links/howto.html" target="_blank" rel="noopener">使い方</a>
+    <div class="settings">
+      <button id="settingsBtn" class="btn">設定 ▾</button>
+      <div id="settingsMenu" class="settings-menu">
+        <div id="loginMi" class="mi">Googleログイン</div>
+        <div id="importMi" class="mi">インポート（NDJSON）</div>
+        <div id="exportMi" class="mi">エクスポート（NDJSON）</div>
       </div>
     </div>
-  </header>
+    <a class="btn-link" href="https://keirinjingle.github.io/keirin-links/donation.html" target="_blank" rel="noopener">寄付</a>
+  </div>
+</header>
 
-  <main>
-    <div class="hint">
-      ・「/」で補完を開きます（選手／当日レース／戦法／タグ）。<br/>
-      ・使い方は <a href="https://keirinjingle.github.io/keirin-links/howto.html" target="_blank">詳細な使い方はこちら</a>。
-    </div>
-
-    <!-- 入力とツールバー -->
-    <section style="margin-top:1rem">
-      <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-bottom:.5rem">
-        <button id="slashBtn" class="btn">/</button>
-        <button id="openSearchBtn" class="btn">レース検索</button>
-        <button id="addTopBtn" class="btn primary">登録</button>
-      </div>
-      <textarea id="memoInput" placeholder="ここにメモ。/ で補完（選手・レース・戦法・タグ）"></textarea>
-    </section>
-
-    <!-- 一覧 -->
-    <section style="margin-top:1rem">
-      <div id="entriesList"></div>
-    </section>
-  </main>
-
-  <!-- 設定メニューのポップオーバー（簡易） -->
-  <div id="settingsMenu" style="position:fixed; right:10px; top:58px; background:var(--card); border:1px solid var(--line); border-radius:10px; box-shadow:var(--shadow-md); padding:.5rem; display:none; z-index:40; min-width:260px">
-    <div style="padding:.35rem .5rem; font-weight:700">設定</div>
-    <hr/>
-    <div style="display:flex; flex-direction:column; gap:.4rem; padding:.3rem .5rem">
-      <button id="googleLoginBtn" class="btn">Googleログイン</button>
-      <button id="exportBtn" class="btn">エクスポート（NDJSON）</button>
-      <button id="importBtn" class="btn">インポート（NDJSON）</button>
-    </div>
+<main class="wrap">
+  <div class="toolbar">
+    <button id="inlineSlash" class="btn" title="/ を挿入">/</button>
+    <button id="openSearch" class="btn" title="Ctrl/Cmd+K でも開けます">レース検索</button>
+    <button id="addBtn" class="btn btn-primary">登録</button>
   </div>
 
-  <!-- 検索ダイアログ -->
-  <dialog id="searchDlg">
-    <div class="dlg-head">
-      <div>検索</div>
-      <button class="btn ghost" id="closeSearchBtn">×</button>
-    </div>
-    <div class="dlg-body">
-      <div style="display:flex; gap:.5rem; margin-bottom:.5rem">
-        <button id="tabRaceBtn" class="btn primary">レース内検索</button>
-        <button id="tabFullBtn" class="btn">全文検索</button>
-      </div>
+  <div id="taWrap" style="position:relative">
+    <textarea id="ta" placeholder="例）- 函館6R 先行注意 /まくり +展開 @山田太郎"></textarea>
+    <div id="dropdown" class="dropdown"></div>
+  </div>
 
-      <!-- タブ: レース内検索 -->
-      <div id="raceTab">
-        <div id="raceSuggestWrap" style="min-height:120px"></div>
-        <hr/>
-        <div id="newMemoWrap" style="display:none">
-          <div style="font-weight:700; margin-bottom:.2rem">メモを追加</div>
-          <textarea id="newMemoTa" placeholder="このレースに紐づくメモを記入"></textarea>
-          <div style="display:flex; gap:.5rem; justify-content:flex-end; margin-top:.5rem">
-            <button id="saveMemoBtn" class="btn primary">登録</button>
+  <section id="cards" class="cards"></section>
+
+  <div class="footer">データはローカル保存。Google接続で Drive(App Folder) 同期が使えます。</div>
+</main>
+
+<!-- 検索 -->
+<dialog id="searchDlg">
+  <div style="padding:12px 14px; display:grid; gap:10px;">
+    <div style="display:flex;align-items:center;gap:.5rem;justify-content:space-between">
+      <strong>検索</strong>
+      <button id="searchClose" class="btn">閉じる</button>
+    </div>
+
+    <div class="tabs">
+      <button id="tabRace"  class="tab is-active">レース内検索</button>
+      <button id="tabFull"  class="tab">全文検索</button>
+    </div>
+
+    <!-- ▼ レース内検索 -->
+    <div id="panelRace" class="tabpanel is-active">
+      <div class="list">
+        <div style="display:flex; gap:.6rem; align-items:center; flex-wrap:wrap;">
+          <input id="raceSearchInput" type="text" placeholder="例：函館 6R / 立川6R" style="width:32ch;max-width:60vw;padding:.4rem .6rem;border:1px solid var(--line);border-radius:.6rem">
+          <button id="raceSearchClear" class="btn">クリア</button>
+          <span class="muted small">当日の会場とR番号から検索</span>
+        </div>
+        <div id="raceSuggest" class="race-suggest"></div>
+
+        <div id="raceView" class="card" style="display:none">
+          <div class="head">
+            <span class="date" id="raceHead"></span>
+            <a id="raceEntryLink" class="btn-link" href="#" target="_blank" rel="noopener">出走表</a>
+            <a id="raceResultLink" class="btn-link" href="#" target="_blank" rel="noopener" style="display:none">結果</a>
+          </div>
+          <div class="player-list" id="playerList"></div>
+        </div>
+
+        <div id="playerNotesWrap" class="card" style="display:none">
+          <div class="head"><strong id="playerNotesHead">@選手 の過去メモ</strong></div>
+          <div id="playerNotes" class="note-list"></div>
+        </div>
+
+        <div id="newMemoWrap" class="card" style="display:none">
+          <div class="head"><strong>メモを追加</strong></div>
+          <textarea id="newMemoTa" placeholder="- 函館6R … @選手名"></textarea>
+          <div style="display:flex; gap:.5rem; margin-top:.5rem;">
+            <button id="saveMemoBtn" class="btn btn-primary">登録</button>
             <button id="cancelMemoBtn" class="btn">キャンセル</button>
           </div>
+          <div id="newMemoTip" class="muted small" style="margin-top:.25rem">※ 登録すると一覧に即反映されます</div>
         </div>
       </div>
+    </div>
 
-      <!-- タブ: 全文検索 -->
-      <div id="fullTab" style="display:none">
-        <input id="searchInput" placeholder="キーワードで検索" style="width:100%; padding:.55rem .65rem; border:1px solid var(--line); border-radius:.5rem"/>
-        <div id="searchResult" style="margin-top:.6rem"></div>
+    <!-- ▼ 全文検索 -->
+    <div id="panelFull" class="tabpanel">
+      <div style="display:flex; gap:.6rem; align-items:center; flex-wrap:wrap;">
+        <input id="searchInput" type="text" placeholder="語句を入力（raw.includes）" style="width:46ch;max-width:68vw;padding:.4rem .6rem;border:1px solid var(--line);border-radius:.6rem">
+        <span class="muted small">ヒント：<span class="kbd">@名前</span> や <span class="kbd">+タグ</span> でも検索できます</span>
       </div>
+      <div id="searchCount" style="color:#6b7280;margin-top:.4rem"></div>
+      <div id="searchList" style="margin-top:.25rem; max-height:60vh; overflow:auto;"></div>
     </div>
-    <div class="dlg-foot">
-      <button class="btn" id="clearSearchBtn">クリア</button>
-      <button class="btn primary" id="goTopBtn">TOPに戻る</button>
-    </div>
-  </dialog>
+  </div>
+</dialog>
 
-<!-- ========== GIS (Google Identity Services) と Drive 同期ヘルパ ========== -->
+<!-- 初回同期の向き確認 -->
+<dialog id="syncDlg">
+  <form method="dialog" style="padding:14px 16px; display:grid; gap:12px; max-width:720px;">
+    <h3 style="margin:0;">Google 同期の初期設定</h3>
+    <div id="syncSummary" style="color:#374151; line-height:1.6"></div>
+    <div style="background:#fff7ed;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;color:#9a3412;font-size:.9rem">
+      ※ どちらか一方に<strong>上書き</strong>します。必要なら先にエクスポートでバックアップしてください。
+    </div>
+    <div style="display:flex; gap:.5rem; justify-content:flex-end">
+      <button value="localToServer" class="btn btn-primary">ローカル→サーバーに上書き</button>
+      <button value="serverToLocal" class="btn">サーバー→ローカルに上書き</button>
+      <button value="cancel" class="btn">キャンセル</button>
+    </div>
+  </form>
+</dialog>
+
 <script>
-(() => {
-  const CLIENT_ID = (document.querySelector('meta[name="mofu:google-client-id"]')?.content || '').trim();
-  let tokenClient = null;
-  let accessToken = null;
+/* ========== meta / config ========== */
+const CLIENT_ID = (document.querySelector('meta[name="mofu:google-client-id"]')?.content||'').trim();
+const ALLOWED_ORIGINS = (document.querySelector('meta[name="mofu:allowed-origins"]')?.content||'')
+  .split(',').map(s=>s.trim()).filter(Boolean);
+const ORIGIN_ALLOWED = !ALLOWED_ORIGINS.length || ALLOWED_ORIGINS.includes(location.origin);
 
-  // 1) GIS準備
-  function waitGisReady(timeoutMs=5000){
-    return new Promise((resolve)=>{
-      const t0 = Date.now();
-      (function loop(){
-        const ok = !!(window.google && google.accounts && google.accounts.oauth2);
-        if (ok) return resolve(true);
-        if (Date.now() - t0 > timeoutMs) return resolve(false);
-        setTimeout(loop, 60);
-      })();
-    });
+/* ========== 基本状態 & 定数 ========== */
+const ta = document.getElementById('ta');
+const dropdown = document.getElementById('dropdown');
+const riderStatus = document.getElementById('riderStatus');
+const raceStatus  = document.getElementById('raceStatus');
+
+const KEY_ENTRIES = 'mofu:entries:mvp2'; // ← バージョン
+let MEM_ENTRIES = null;                  // メモリキャッシュ
+let STORAGE_OK = true;                   // localStorage が使えるか
+let composing=false, imeJustEnded=false, ddSel=-1, curItems=[], lastCaret=0;
+const IME_SUPPRESS_MS=200;
+
+// ▼ サジェスト上限
+const MAX_TOTAL_ITEMS = 60;
+const MAX_RACE_ITEMS  = 20;
+
+/* ========== util（JST日付・正規化など） ========== */
+const pad2 = (n)=> String(n).padStart(2,'0');
+const ymdJST = () => { const d = new Date(); const tz = d.getTimezoneOffset()*60000; return new Date(d.getTime()-tz).toISOString().slice(0,10).replace(/-/g,''); };
+const ymd_dash = () => { const d = new Date(); const tz = d.getTimezoneOffset()*60000; return new Date(d.getTime()-tz).toISOString().slice(0,10); };
+const toJstIso = (yyyymmdd, hhmm) => {
+  if(!/^\d{8}$/.test(yyyymmdd)||!/^\d{2}:\d{2}$/.test(hhmm)) return null;
+  return `${yyyymmdd.slice(0,4)}-${yyyymmdd.slice(4,6)}-${yyyymmdd.slice(6)}T${hhmm}:00+09:00`;
+};
+const normStr = (s)=> (s||'').normalize('NFKC').replace(/\s+/g,' ').trim();
+const normNameKey = (name)=> normStr(name).replace(/\s+/g,''); // 氏名はスペース除去でキー化
+const REGION_MAP = {
+  '神奈':'神奈川','北海':'北海道','鹿児':'鹿児島','徳島':'徳島','群馬':'群馬','千葉':'千葉','埼玉':'埼玉','東京':'東京','福島':'福島','青森':'青森','岩手':'岩手','宮城':'宮城','秋田':'秋田','山形':'山形','茨城':'茨城','栃木':'栃木','新潟':'新潟','富山':'富山','石川':'石川','福井':'福井','山梨':'山梨','長野':'長野','岐阜':'岐阜','静岡':'静岡','愛知':'愛知','三重':'三重','滋賀':'滋賀','京都':'京都','大阪':'大阪','兵庫':'兵庫','奈良':'奈良','和歌山':'和歌山','鳥取':'鳥取','島根':'島根','岡山':'岡山','広島':'広島','山口':'山口','香川':'香川','愛媛':'愛媛','高知':'高知','福岡':'福岡','佐賀':'佐賀','長崎':'長崎','熊本':'熊本','大分':'大分','宮崎':'宮崎','沖縄':'沖縄'
+};
+const normRegion = (r)=> REGION_MAP[r] || r || '';
+
+/* ========== ステータス表示 ========== */
+function setStatus(el, ok, msg){
+  const mark = el.querySelector('.mark');
+  mark.textContent = ok ? '✅' : `✖${msg?`(${msg})`:''}`;
+  el.classList.toggle('ok', !!ok);
+  el.classList.toggle('ng', !ok);
+}
+
+/* ========== 外部データ（選手DB・当日レース） ========== */
+const RIDERS_URL = 'https://keirinjingle.github.io/keirin-links/senshuID.json';
+const RACES_URL  = (ymd) => `https://keirinjingle.github.io/keirin-links/data/keirin_race_list_${ymd}.json`;
+
+let RIDERS = [];   // {id,name,region,ki,grade,profile}
+let DAYCARDS = []; // [{date, venue, jo_code, races:[{race_number, start_time, closed_at, class_category, race_url, result_url?, players:[{no,name,region,term}]}]}]
+
+/* ========== localStorage 健全性チェック ========== */
+(function storageHealthCheck(){
+  try{
+    const k = KEY_ENTRIES + ':healthcheck';
+    localStorage.setItem(k, '1');
+    localStorage.removeItem(k);
+    STORAGE_OK = true;
+  }catch(e){
+    console.warn('localStorage が使えません（メモリのみで継続）:', e);
+    STORAGE_OK = false;
   }
-
-  // 2) 外部公開：ログイン準備（app.js から呼ばれる）
-  window.ensureGisReady = async function(){
-    const ok = await waitGisReady();
-    if (!ok) { console.error('GIS not loaded'); alert('Googleログインの準備に失敗しました'); return false; }
-
-    if (!tokenClient){
-      if (!CLIENT_ID){ alert('Google Client ID が見つかりません'); return false; }
-
-      tokenClient = google.accounts.oauth2.initTokenClient({
-        client_id: CLIENT_ID,
-        scope: 'https://www.googleapis.com/auth/drive.file',
-        callback: (resp) => {
-          if (resp && resp.access_token){
-            accessToken = resp.access_token;
-            window.accessToken = accessToken;
-            console.info('mofu: got access token');
-          }else{
-            console.warn('mofu: no access token in callback', resp);
-          }
-        }
-      });
-    }
-
-    // 最初のトークン要求
-    tokenClient.requestAccessToken({ prompt: 'consent' });
-    return true;
-  };
-
-  // 3) 外部公開：サイレント更新（401時の再試行など）
-  window.refreshAccessTokenSilent = async function(){
-    const ok = await waitGisReady();
-    if (!ok || !tokenClient) return false;
-
-    return new Promise((resolve) => {
-      tokenClient.callback = (resp) => {
-        const has = !!(resp && resp.access_token);
-        if (has){
-          accessToken = resp.access_token;
-          window.accessToken = accessToken;
-        }
-        resolve(has);
-      };
-      tokenClient.requestAccessToken({ prompt: '' }); // consent なし
-    });
-  };
 })();
-</script>
 
-<!-- ▼▼▼ ここから：Drive API ヘルパ3関数を公開（必須） ▼▼▼ -->
-<script>
-(() => {
-  const DRIVE_V3 = 'https://www.googleapis.com/drive/v3';
-  const UPLOAD_V3 = 'https://www.googleapis.com/upload/drive/v3';
+/* ========== 永続 I/O（堅牢版） ========== */
+const loadEntries = () => {
+  if (MEM_ENTRIES) return MEM_ENTRIES;
+  try {
+    if (!STORAGE_OK) { MEM_ENTRIES = []; return MEM_ENTRIES; }
+    const raw = localStorage.getItem(KEY_ENTRIES);
+    if (!raw) { MEM_ENTRIES = []; return MEM_ENTRIES; }
+    const parsed = JSON.parse(raw);
+    MEM_ENTRIES = Array.isArray(parsed) ? parsed : [];
+    return MEM_ENTRIES;
+  } catch (e) {
+    console.warn('保存データが壊れているため初期化します（バックアップを :corrupt に退避）。', e);
+    try { if (STORAGE_OK) localStorage.setItem(KEY_ENTRIES + ':corrupt', localStorage.getItem(KEY_ENTRIES) || ''); } catch {}
+    MEM_ENTRIES = [];
+    if (STORAGE_OK) localStorage.setItem(KEY_ENTRIES, '[]');
+    return MEM_ENTRIES;
+  }
+};
 
-  async function ensureAccessToken() {
-    if (window.accessToken) return true;
-    if (typeof window.refreshAccessTokenSilent === 'function') {
-      const ok = await window.refreshAccessTokenSilent();
-      return !!ok;
-    }
+const saveEntries = (arr) => {
+  MEM_ENTRIES = Array.isArray(arr) ? arr : [];
+  if (!STORAGE_OK) return false;
+  try{
+    localStorage.setItem(KEY_ENTRIES, JSON.stringify(MEM_ENTRIES));
+    return true;
+  }catch(e){
+    console.warn('localStorage 保存に失敗（メモリのみ）:', e);
     return false;
   }
+};
 
-  async function driveFetch(url, opt = {}, retry = true) {
-    const ok = await ensureAccessToken();
-    if (!ok) throw new Error('No access token. Please Google-login first.');
+/* ========== 選手・レース取得 ========== */
+function extractKi(kiText){ const m=(kiText||'').match(/(\d+)期/); return m ? `${m[1]}期` : (kiText||''); }
 
-    const res = await fetch(url, {
-      ...opt,
-      headers: {
-        'Authorization': `Bearer ${window.accessToken}`,
-        ...(opt.headers || {})
+async function fetchRiders(){
+  try{
+    const res = await fetch(RIDERS_URL, { cache:'no-cache' });
+    if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    const raw = await res.text();
+    let arr; try{ arr = JSON.parse(raw); } catch{ throw new Error('JSON parse error'); }
+    RIDERS = arr.map(r=>({
+      id: String(r['登録番号']||'').trim(),
+      name: r['選手名'],
+      ki: extractKi(r['期']),
+      region: r['地域']||'',
+      grade: r['級']||'',
+      profile: (r['プロフィールURL']||'').replace('https://keirin.netkeiba.comhttps://','https://')
+    }));
+    setStatus(riderStatus, true);
+  }catch(e){
+    console.warn('選手DB取得失敗:', e);
+    RIDERS = [];
+    setStatus(riderStatus, false, e.message||'fetch error');
+  }
+}
+
+async function fetchRaces(){
+  try{
+    const url = RACES_URL(ymdJST());
+    const res = await fetch(url, { cache:'no-cache' });
+    if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    const raw = await res.text();
+    let data; try{ data = JSON.parse(raw); } catch{ throw new Error('JSON parse error'); }
+    DAYCARDS = Array.isArray(data) ? data : [];
+    setStatus(raceStatus, true);
+  }catch(e){
+    console.warn('当日レース取得失敗:', e);
+    DAYCARDS = [];
+    setStatus(raceStatus, false, e.message||'fetch error');
+  }
+}
+
+/* ========== サジェスト（戦法・選手・レース・タグ） ========== */
+const TACTICS = ['三分戦','二分戦','単騎','先行一車','まくり','差し','カマシ','自在'];
+
+function getSlashToken(text, caret){
+  const m = text.slice(0, caret).match(/(^|\s)\/(\S*)$/);
+  if (!m) return null;
+  return { token:m[2], start:caret - m[2].length - 1, end: caret };
+}
+function norm(s){ return (s||'').toLowerCase(); }
+
+/* レース優先の候補 */
+function findCandidates(q){
+  const n = norm(q||'');
+  const wantFallback = !q || !q.trim();
+  const hasDigit = /[0-9０-９]/.test(q||'');
+
+  const raceItems=[];
+  if (DAYCARDS.length && (wantFallback || hasDigit || (q && DAYCARDS.some(v=> norm(v.venue).includes(n) || n.includes(norm(v.venue)))))){
+    const lower = n;
+    outer: for (const v of DAYCARDS){
+      const matchVenue = !q || norm(v.venue).includes(lower) || lower.includes(norm(v.venue));
+      if (!matchVenue && !hasDigit) continue;
+      for (const rr of v.races||[]){
+        let pass=true;
+        if (hasDigit){
+          const m = lower.match(/(\d{1,2})$/);
+          if (m){ const no=parseInt(m[1],10); pass = (rr.race_number===no); }
+        }
+        if (pass){
+          raceItems.push({ type:'race', v, r: rr });
+          if (raceItems.length>=MAX_RACE_ITEMS) break outer;
+        }
       }
-    });
-
-    // 401 → トークン失効の可能性。1回だけ再取得して再試行。
-    if (res.status === 401 && retry && typeof window.refreshAccessTokenSilent === 'function') {
-      const r = await window.refreshAccessTokenSilent();
-      if (r) return driveFetch(url, opt, /*retry*/false);
     }
-    return res;
   }
 
-  // 1) 名前でファイルIDを探す
-  window.driveFindFileIdByName = async function(name) {
-    const q = encodeURIComponent(`name='${name.replace(/'/g, "\\'")}' and trashed=false`);
-    const url = `${DRIVE_V3}/files?q=${q}&fields=files(id,name)&spaces=drive&pageSize=10`;
-    const res = await driveFetch(url, { method: 'GET' });
-    if (!res.ok) throw new Error('Drive list failed: ' + res.status);
-    const data = await res.json();
-    return (data.files && data.files[0] && data.files[0].id) || null;
+  const tacticItems = (q ? TACTICS.filter(t=>norm(t).includes(n)) : TACTICS).map(t=>({type:'tactic', t}));
+
+  let riderItems=[];
+  if (RIDERS.length && q){
+    riderItems = RIDERS
+      .filter(r => (`${r.name} ${r.region} ${r.ki}`).toLowerCase().includes(n))
+      .slice(0, 6)
+      .map(r => ({ type:'riderDb', r }));
+  } else if (q){
+    riderItems = [{type:'rider', name:q}];
+  }
+
+  const tagItems = q ? [{type:'tag', tag:q}] : [];
+  const combined = [...raceItems, ...tacticItems, ...riderItems, ...tagItems];
+  return combined.slice(0, Math.max(MAX_TOTAL_ITEMS, raceItems.length));
+}
+
+function renderDropdown(items){
+  if (!items.length){ dropdown.style.display='none'; ddSel=-1; return; }
+  dropdown.innerHTML = items.map((it,i)=>{
+    if (it.type==='race'){ return `<div class="item" data-i="${i}"><span class="type">レース</span> - ${it.v.venue}${it.r.race_number}R</div>`; }
+    if (it.type==='tactic') return `<div class="item" data-i="${i}"><span class="type">戦法</span> #${it.t}</div>`;
+    if (it.type==='riderDb'){
+      const r=it.r; const right = r.region ? `${r.region}／${r.ki}` : r.ki;
+      return `<div class="item" data-i="${i}"><span class="type">選手</span> @${r.name}（${right}）</div>`;
+    }
+    if (it.type==='rider')  return `<div class="item" data-i="${i}"><span class="type">選手</span> @${it.name}</div>`;
+    return `<div class="item" data-i="${i}"><span class="type">タグ</span> +${it.tag}</div>`;
+  }).join('');
+  dropdown.style.display='block';
+  ddSel=0; highlightSelection();
+  dropdown.scrollTop=0;
+}
+
+function updateDropdown(){
+  // いまのカーソル位置までのテキストから「/トークン」を拾う
+  const tok = getSlashToken(ta.value, lastCaret);
+  if (!tok) {
+    // 「/」の直後でなければメニューを閉じる
+    dropdown.style.display = 'none';
+    ddSel = -1;
+    return;
+  }
+  // 「/」の後ろの文字列で候補を作る（空でもOK：デフォルト候補を出す）
+  const q = tok.token || '';
+  curItems = findCandidates(q);
+  renderDropdown(curItems);
+}
+
+/* ========== ドロップダウン操作（IME安全・固定配置） ========== */
+function highlightSelection(){
+  const nodes=dropdown.querySelectorAll('.item');
+  nodes.forEach((n,i)=>n.classList.toggle('is-active', i===ddSel));
+  const active=nodes[ddSel];
+  if(active){
+    const r=active.getBoundingClientRect(), pr=dropdown.getBoundingClientRect();
+    if(r.top<pr.top || r.bottom>pr.bottom) active.scrollIntoView({block:'nearest'});
+  }
+}
+function moveSelection(delta){
+  const n=dropdown.querySelectorAll('.item').length; if(!n) return;
+  if(ddSel<0) ddSel=0; ddSel=(ddSel+delta+n)%n; highlightSelection();
+}
+function commitDropdown(idx){
+  const tok=getSlashToken(ta.value, lastCaret);
+  if(!tok){ dropdown.style.display='none'; ddSel=-1; return; }
+  const it=curItems[idx];
+  if(!it){ dropdown.style.display='none'; ddSel=-1; return; }
+
+  let insert='';
+  if(it.type==='tactic') insert = '#'+it.t;
+  else if(it.type==='riderDb') insert = '@'+it.r.name;
+  else if(it.type==='race') insert = `- ${it.v.venue}${it.r.race_number}R`;
+  else if(it.type==='rider') insert = '@'+it.name;
+  else insert = '+'+it.tag;
+
+  const before=ta.value.slice(0,tok.start);
+  const after=ta.value.slice(tok.end);
+
+  const needsLeadingSpace = before && !/\s$/.test(before);
+  const needsTrailingSpace = after && !/^\s/.test(after);
+
+  const piece = (needsLeadingSpace?' ':'') + insert + (needsTrailingSpace?' ':'');
+  ta.value = before + piece + after;
+
+  const newPos = (before + piece).length;
+  ta.setSelectionRange(newPos,newPos);
+  lastCaret=newPos;
+
+  dropdown.style.display='none'; ddSel=-1;
+  ta.focus();
+}
+
+/* ========== 入力ハンドラ（IME完全ガード） ========== */
+ta.addEventListener('compositionstart', ()=>{ composing=true; });
+ta.addEventListener('compositionend', ()=>{
+  composing=false;
+  lastCaret=ta.selectionStart;
+  updateDropdown();
+  imeJustEnded=true;
+  setTimeout(()=> imeJustEnded=false, IME_SUPPRESS_MS);
+});
+ta.addEventListener('input', ()=>{ lastCaret=ta.selectionStart; updateDropdown(); });
+ta.addEventListener('keyup', (e)=>{ lastCaret=ta.selectionStart; if(e.key==='/' && !composing) updateDropdown(); });
+ta.addEventListener('click', ()=>{ lastCaret=ta.selectionStart; });
+document.addEventListener('selectionchange', ()=>{ if(document.activeElement===ta){ lastCaret=ta.selectionStart; }});
+
+ta.addEventListener('keydown', (e)=>{
+  if (e.isComposing) return;
+  lastCaret = ta.selectionStart;
+  if (dropdown.style.display!=='block') return;
+  const tok = getSlashToken(ta.value, lastCaret);
+  if (!tok) return;
+
+  if(e.key==='ArrowDown'){ e.preventDefault(); moveSelection(1); }
+  else if(e.key==='ArrowUp'){ e.preventDefault(); moveSelection(-1); }
+  else if(e.key==='Enter' || e.key==='Tab'){
+    if (imeJustEnded) return;
+    e.preventDefault();
+    if (ddSel>=0) commitDropdown(ddSel);
+  }else if(e.key==='Escape'){ e.preventDefault(); dropdown.style.display='none'; ddSel=-1; }
+});
+
+/* モバイル：スクロールとタップの誤確定抑止 */
+let tapState=null; const TAP_MOVE_TOL=6;
+dropdown.addEventListener('pointerdown', (e)=>{
+  const node=e.target.closest('.item'); if(!node){ tapState=null; return; }
+  tapState={ idx:parseInt(node.dataset.i,10), x:e.clientX, y:e.clientY, dragged:false };
+});
+dropdown.addEventListener('pointermove', (e)=>{
+  if(!tapState) return;
+  if(Math.abs(e.clientX-tapState.x)>TAP_MOVE_TOL || Math.abs(e.clientY-tapState.y)>TAP_MOVE_TOL) tapState.dragged=true;
+});
+dropdown.addEventListener('scroll', ()=>{ if(tapState) tapState.dragged=true; });
+dropdown.addEventListener('pointerup', (e)=>{
+  if(!tapState) return;
+  const node=e.target.closest('.item'); const idx=node?parseInt(node.dataset.i,10):tapState.idx;
+  const dragged=tapState.dragged; tapState=null;
+  if(!dragged){ e.preventDefault(); e.stopPropagation(); commitDropdown(idx); }
+});
+dropdown.addEventListener('pointercancel', ()=>{ tapState=null; });
+
+/* スラッシュ挿入 */
+document.getElementById('inlineSlash').addEventListener('click', (ev)=>{
+  ev.stopPropagation();
+  ta.focus(); const st=ta.selectionStart; ta.setRangeText('/', st, st, 'end');
+  lastCaret=ta.selectionStart; updateDropdown();
+});
+
+/* ========== CRUD（メモリ→UI→保存） ========== */
+function addEntry(raw, entities=null){
+  const entry={
+    id: Date.now().toString(36)+Math.random().toString(16).slice(2),
+    at: new Date().toISOString(),
+    raw
+  };
+  if (entities && typeof entities==='object') entry.entities = entities;
+
+  const arr = loadEntries().slice();
+  arr.push(entry);
+  const ok = saveEntries(arr);
+  renderList(arr); // 保存失敗でも画面は反映
+  scheduleDriveSave();
+  if (!ok) alert('注意：この環境では保存が制限されている可能性があります（プライベートモード等）。');
+}
+function updateEntry(id, newRaw){
+  const arr = loadEntries().slice();
+  const i = arr.findIndex(e=>e.id===id); if(i<0) return;
+  arr[i] = { ...arr[i], raw:newRaw, at:new Date().toISOString() };
+  const ok = saveEntries(arr);
+  renderList(arr);
+  scheduleDriveSave();
+  if (!ok) alert('注意：この環境では保存が制限されています。');
+}
+function deleteEntry(id){
+  const arr = loadEntries().filter(e=>e.id!==id);
+  const ok = saveEntries(arr);
+  renderList(arr);
+  scheduleDriveSave();
+  if (!ok) alert('注意：この環境では保存が制限されています。');
+}
+
+document.getElementById('addBtn').addEventListener('click', (ev)=>{
+  ev.stopPropagation();
+  const raw=ta.value.trim(); if(!raw){ alert('テキストが空です'); return; }
+  addEntry(raw);
+  ta.value=''; dropdown.style.display='none';
+});
+
+/* ========== 出走表・結果リンクの自動差し込み（カード側） ========== */
+function parseRaceFromRaw(raw){
+  const m = (raw||'').match(/-\s*([\u3040-\u30ff\u4e00-\u9fafA-Za-z]+)(\d{1,2})R/);
+  if(!m) return null;
+  const venue = m[1]; const raceNo = parseInt(m[2],10);
+  const v = (DAYCARDS||[]).find(x=>x.venue===venue);
+  if(!v) return { venue, raceNo, entry:null, result:null, date: ymd_dash() };
+  const rr = (v.races||[]).find(x=>x.race_number===raceNo);
+  if(!rr) return { venue, raceNo, entry:null, result:null, date: ymd_dash() };
+  const entry = rr.race_url || rr.url || null; // オッズパーク
+  const result = rr.result_url || (entry && entry.includes('/entry/') ? entry.replace('/entry/','/result/') : null);
+  return { venue, raceNo, entry, result, date: (v.date? `${v.date.slice(0,4)}-${v.date.slice(4,6)}-${v.date.slice(6)}` : ymd_dash()) };
+}
+
+/* ========== 表示（一覧） ========== */
+function linkifyRaw(html){
+  html=html.replace(/@([^\s@#\+（）()]+)/g,(m,n)=>`<a href="#" class="riderLink" data-q="@${n}">@${n}</a>`);
+  html=html.replace(/\+("[^"]+"|[\w\u3040-\u30ff\u4e00-\u9faf]+)/g,(m)=>`<a href="#" class="tagLink" data-q="${m}">${m}</a>`);
+  return html;
+}
+function renderList(listOverride){
+  const el=document.getElementById('cards');
+  const list=(listOverride ?? loadEntries()).slice().reverse();
+  el.innerHTML=list.map(e=>{
+    const headLeft=(e.at||'').slice(0,10);
+    const race=parseRaceFromRaw(e.raw||'');
+    const links = race && (race.entry||race.result) ? `
+      <a href="${race.entry||'#'}" ${race.entry?'target="_blank" rel="noopener"':''}>[出走表]</a>
+      ${race.result?`<a href="${race.result}" target="_blank" rel="noopener">[結果]</a>`:''}
+    ` : '';
+    const raw=linkifyRaw((e.raw||'').replace(/</g,'&lt;'));
+    const actions=`<div style="margin-left:auto;display:flex;gap:.4rem">
+      <button class="linklike editBtn" data-id="${e.id}">編集</button>
+      <button class="linklike delBtn" data-id="${e.id}">削除</button></div>`;
+    return `<div class="card" id="card_${e.id}">
+      <div class="head"><span class="date">${race?`${race.date} ${race.venue}${race.raceNo}R`:headLeft}</span> ${links} ${actions}</div>
+      <div class="raw">${raw}</div></div>`;
+  }).join('') || '<div class="card" style="color:#9ca3af">（まだメモがありません）</div>';
+}
+renderList(loadEntries());
+
+/* 編集・削除・リンクで検索 */
+document.body.addEventListener('click', (e)=>{
+  const editBtn=e.target.closest('.editBtn'); const delBtn=e.target.closest('.delBtn');
+  const r=e.target.closest('a.riderLink'); const t=e.target.closest('a.tagLink');
+
+  if(editBtn){
+    const id=editBtn.dataset.id;
+    const entry=loadEntries().find(x=>x.id===id); if(!entry) return;
+    const newRaw=prompt('メモを編集', entry.raw||''); if(newRaw==null) return;
+    updateEntry(id, newRaw);
+    return;
+  }
+  if(delBtn){
+    const id=delBtn.dataset.id; if(confirm('このメモを削除しますか？')) deleteEntry(id); return;
+  }
+  if(r){ e.preventDefault(); openSearch(''); switchToTab('full'); searchInput.value=r.dataset.q; runSearch(); }
+  if(t){ e.preventDefault(); openSearch(''); switchToTab('full'); searchInput.value=t.dataset.q; runSearch(); }
+});
+
+/* ========== 全文検索 ========== */
+const searchDlg=document.getElementById('searchDlg');
+const searchInput=document.getElementById('searchInput');
+document.getElementById('openSearch').addEventListener('click', ()=>{ openSearch(''); });
+document.addEventListener('keydown', (e)=>{ if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='k'){ e.preventDefault(); openSearch(''); }});
+
+function openSearch(prefill){
+  searchInput.value=prefill||'';
+  document.getElementById('searchList').innerHTML='';
+  document.getElementById('searchCount').textContent='';
+  switchToTab('race'); // ← 初期表示はレース内検索
+  searchDlg.showModal();
+  focusRaceSearch();
+}
+document.getElementById('searchClose').addEventListener('click', ()=> searchDlg.close());
+let searchTimer=null;
+searchInput.addEventListener('input', ()=>{ clearTimeout(searchTimer); searchTimer=setTimeout(runSearch,200); });
+
+function makeHiliter(words){
+  const sorted=[...words].sort((a,b)=>b.length-a.length);
+  const res=sorted.map(w=>w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
+  if(!res.length) return s=>s; const re=new RegExp('('+res.join('|')+')','gi');
+  return s=>s.replace(re,'<span class="hl">$1</span>');
+}
+function snippet(raw, query){
+  if(!query.length) return raw.slice(0,120);
+  const q=query[0]; const idx=raw.toLowerCase().indexOf(q.toLowerCase());
+  const i=idx>=0?idx:0; const start=Math.max(0,i-40), end=Math.min(raw.length,i+80);
+  return (start>0?'…':'')+raw.slice(start,end)+(end<raw.length?'…':'');
+}
+function runSearch(){
+  const q=(searchInput.value||'').trim();
+  const all=loadEntries();
+  const hits = q ? all.filter(e => (e.raw||'').includes(q)) : all.slice();
+  hits.sort((a,b)=>(b.at||'').localeCompare(a.at||''));
+  const words = q ? [q] : [];
+  const hi = makeHiliter(words);
+
+  const html=hits.slice(0,200).map(e=>{
+    const race=parseRaceFromRaw(e.raw||'');
+    const headLeft=race?`${race.date} ${race.venue}${race.raceNo}R`:(e.at||'').slice(0,10);
+    const snip=snippet(e.raw, words).replace(/</g,'&lt;');
+    return `<div class="card result-item">
+      <div class="head"><span class="date">${headLeft}</span>
+        <button class="linklike openCardBtn" data-id="${e.id}">表示</button></div>
+      <div class="raw">${hi(snip)}</div>
+    </div>`;
+  }).join('') || '<div class="card" style="color:#9ca3af">（該当なし）</div>';
+
+  document.getElementById('searchList').innerHTML=html;
+  document.getElementById('searchCount').textContent=`${hits.length} 件`;
+
+  document.getElementById('searchList').onclick = (e)=>{
+    const btn=e.target.closest('.openCardBtn'); if(!btn) return;
+    const id=btn.dataset.id; searchDlg.close();
+    const node=document.getElementById('card_'+id);
+    if(node){ node.scrollIntoView({behavior:'smooth', block:'center'}); }
+  };
+}
+
+/* ========== レース内検索 ========== */
+const tabFull=document.getElementById('tabFull');
+const tabRace=document.getElementById('tabRace');
+const panelFull=document.getElementById('panelFull');
+const panelRace=document.getElementById('panelRace');
+
+function switchToTab(which){
+  if(which==='full'){
+    tabFull.classList.add('is-active'); tabRace.classList.remove('is-active');
+    panelFull.classList.add('is-active'); panelRace.classList.remove('is-active');
+  }else{
+    tabRace.classList.add('is-active'); tabFull.classList.remove('is-active');
+    panelRace.classList.add('is-active'); panelFull.classList.remove('is-active');
+  }
+}
+tabFull.addEventListener('click', ()=>switchToTab('full'));
+tabRace.addEventListener('click', ()=>{ switchToTab('race'); focusRaceSearch(); renderRaceSuggest(); });
+
+const raceSearchInput=document.getElementById('raceSearchInput');
+const raceSuggest=document.getElementById('raceSuggest');
+const raceSearchClear=document.getElementById('raceSearchClear');
+const raceView=document.getElementById('raceView');
+const raceHead=document.getElementById('raceHead');
+const raceEntryLink=document.getElementById('raceEntryLink');
+const raceResultLink=document.getElementById('raceResultLink');
+const playerList=document.getElementById('playerList');
+const playerNotesWrap=document.getElementById('playerNotesWrap');
+const playerNotesHead=document.getElementById('playerNotesHead');
+const playerNotes=document.getElementById('playerNotes');
+const newMemoWrap=document.getElementById('newMemoWrap');
+const newMemoTa=document.getElementById('newMemoTa');
+const saveMemoBtn=document.getElementById('saveMemoBtn');
+const cancelMemoBtn=document.getElementById('cancelMemoBtn');
+
+function focusRaceSearch(){ setTimeout(()=>raceSearchInput.focus(), 0); }
+
+/* 候補作成 */
+function buildRaceOptions(){
+  const opts=[];
+  for(const v of DAYCARDS){
+    for(const r of (v.races||[])){
+      opts.push({
+        label:`${v.venue}${r.race_number}R`,
+        venue:v.venue, race_number:r.race_number,
+        date:v.date, jo_code:v.jo_code||'',
+        race_url:r.race_url||r.url||'',
+        result_url:r.result_url||null,
+        start_time:r.start_time||'', closed_at:r.closed_at||'',
+        class_category:r.class_category||'',
+        players:r.players||[]
+      });
+    }
+  }
+  return opts;
+}
+
+/* レース候補表示 */
+function renderRaceSuggest(){
+  const q=normStr(raceSearchInput.value||'');
+  const opts=buildRaceOptions();
+  const filtered = q
+    ? opts.filter(o=> normStr(o.label).includes(q) || normStr(o.venue).includes(q) )
+    : opts;
+  const top = filtered.slice(0, 100);
+  raceSuggest.innerHTML = top.map((o,i)=>`
+    <div class="row" data-i="${i}">
+      <strong>${o.label}</strong>
+      <span class="muted small">（${o.date? `${o.date.slice(0,4)}-${o.date.slice(4,6)}-${o.date.slice(6)}`:'—'}）</span>
+      ${o.class_category? `<span class="pill">${o.class_category}</span>`:''}
+    </div>
+  `).join('') || '<div class="muted small" style="padding:.5rem">（当日のレースが見つかりません）</div>';
+  raceSuggest.dataset.rows = JSON.stringify(top);
+}
+
+raceSearchInput.addEventListener('input', ()=>renderRaceSuggest());
+raceSearchClear.addEventListener('click', ()=>{ raceSearchInput.value=''; renderRaceSuggest(); });
+
+raceSuggest.addEventListener('click', (e)=>{
+  const row=e.target.closest('.row'); if(!row) return;
+  const arr=JSON.parse(raceSuggest.dataset.rows||'[]');
+  const o=arr[parseInt(row.dataset.i,10)];
+  if(!o) return;
+  showRace(o);
+});
+
+/* レース表示（出走表＋選手リスト） */
+let currentRace=null, currentPlayer=null;
+
+function raceUid(o){
+  return `${o.date||ymdJST()}-${o.jo_code||'jo'}-${pad2(o.race_number)}`;
+}
+function showRace(o){
+  currentRace = o; currentPlayer = null;
+  raceView.style.display='block';
+  const dateStr = o.date? `${o.date.slice(0,4)}-${o.date.slice(4,6)}-${o.date.slice(6)}` : ymd_dash();
+  raceHead.textContent = `${dateStr} ${o.venue}${o.race_number}R`;
+  raceEntryLink.href = o.race_url || '#';
+  raceEntryLink.style.display = o.race_url ? 'inline-flex' : 'none';
+  // 将来の結果URL（今は無ければ非表示）
+  if (o.result_url){ raceResultLink.href = o.result_url; raceResultLink.style.display='inline-flex'; }
+  else{ raceResultLink.style.display='none'; }
+
+  // 選手リスト
+  const players = o.players||[];
+  playerList.innerHTML = players.map((p,idx)=>{
+    const region = normRegion(p.region||'');
+    const term = p.term? `${p.term}期` : '';
+    return `<div class="player-item" data-i="${idx}">
+      <div><strong>@${(p.name||'').trim()}</strong> <span class="muted small">${region} ${term}</span></div>
+    </div>`;
+  }).join('') || '<div class="muted small">（出走表に選手情報がありません）</div>';
+
+  playerList.onclick = (e)=>{
+    const it=e.target.closest('.player-item'); if(!it) return;
+    const idx=parseInt(it.dataset.i,10);
+    const p=(o.players||[])[idx]; if(!p) return;
+    selectPlayer(o, p);
   };
 
-  // 2) 新規作成（multipart/related）
-  window.driveCreateFile = async function(name, content) {
-    const boundary = 'mofu-' + Math.random().toString(16).slice(2);
-    const meta = { name, mimeType: 'application/x-ndjson' }; // NDJSON想定
+  // 下のブロック初期化
+  playerNotesWrap.style.display='none';
+  newMemoWrap.style.display='none';
 
-    const body =
-      `--${boundary}\r\n` +
-      `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
-      `${JSON.stringify(meta)}\r\n` +
-      `--${boundary}\r\n` +
-      `Content-Type: application/x-ndjson; charset=UTF-8\r\n\r\n` +
-      `${content || ''}\r\n` +
-      `--${boundary}--`;
+  // 自動スクロール
+  raceView.scrollIntoView({behavior:'smooth', block:'start'});
+}
 
-    const res = await driveFetch(`${UPLOAD_V3}/files?uploadType=multipart&fields=id`, {
-      method: 'POST',
-      headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
-      body
+function selectPlayer(o, p){
+  currentPlayer = p;
+  const name=(p.name||'').trim();
+  playerNotesHead.textContent = `@${name} の過去メモ`;
+
+  // 過去メモ抽出（ID一致優先→名前一致）
+  const cand = collectNotesForPlayer(p);
+  renderPlayerNotes(cand);
+
+  // 新規メモテンプレ
+  newMemoTa.value = `- ${o.venue}${o.race_number}R  @${name}`;
+  newMemoWrap.style.display='block';
+  playerNotesWrap.style.display='block';
+
+  newMemoWrap.scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+/* 過去メモ抽出：ID優先、無ければ@名前 */
+function collectNotesForPlayer(p){
+  const all=loadEntries();
+  const riderId = guessRiderId(p);
+  return all.filter(e=>{
+    if (riderId && e.entities?.players && Array.isArray(e.entities.players)){
+      if (e.entities.players.some(x=> x.id && String(x.id)===String(riderId))) return true;
+    }
+    if ((e.raw||'').includes('@'+(p.name||'').trim())) return true;
+    return false;
+  }).sort((a,b)=>(b.at||'').localeCompare(a.at||''));
+}
+
+function renderPlayerNotes(list){
+  if(!list.length){
+    playerNotes.innerHTML = '<div class="muted small" style="padding:.3rem .2rem">この選手に関するメモはありません</div>';
+    return;
+  }
+  playerNotes.innerHTML = list.slice(0,20).map(e=>{
+    const race=parseRaceFromRaw(e.raw||'');
+    const headLeft=race?`${race.date} ${race.venue}${race.raceNo}R`:(e.at||'').slice(0,10);
+    const body=(e.raw||'').replace(/</g,'&lt;');
+    return `<div class="note">
+      <div class="small muted">${headLeft}</div>
+      <div class="raw">${body}</div>
+    </div>`;
+  }).join('');
+}
+
+/* メモ登録（entities 付き） */
+saveMemoBtn.addEventListener('click', ()=>{
+  if(!currentRace || !currentPlayer){ alert('レースと選手を選択してください'); return; }
+  const raw=newMemoTa.value.trim(); if(!raw){ alert('テキストが空です'); return; }
+
+  const r=currentRace, p=currentPlayer;
+  const uid=raceUid(r);
+  const riderId=guessRiderId(p); // 不明なら null でOK
+  const entities={
+    race:{
+      uid,
+      date: r.date || ymdJST(),
+      venue: r.venue,
+      jo_code: r.jo_code||'',
+      race_number: r.race_number,
+      start_at_iso: toJstIso(r.date||ymdJST(), r.start_time||'00:00')
+    },
+    players:[{ id: riderId||null, name: (p.name||'').trim(), region: normRegion(p.region||''), term: p.term||null }]
+  };
+  addEntry(raw, entities);
+
+  // 直後に過去メモも更新
+  const cand = collectNotesForPlayer(p);
+  renderPlayerNotes(cand);
+  newMemoTa.value = `- ${r.venue}${r.race_number}R  @${(p.name||'').trim()}`;
+
+  // （４）登録後は検索ダイアログを閉じてTOPへ
+  searchDlg.close();
+});
+
+cancelMemoBtn.addEventListener('click', ()=>{
+  newMemoWrap.style.display='none';
+});
+
+/* ID推定（同姓同名対策の裏方）：name + term + region で一意に近づける */
+function guessRiderId(p){
+  if(!RIDERS.length) return null;
+  const key=normNameKey(p.name||'');
+  const term = p.term ? `${p.term}期` : null;
+  const region = normRegion(p.region||'');
+  let cand = RIDERS.filter(r=> normNameKey(r.name)===key );
+  if (term) cand = cand.filter(r=> (r.ki||'')===term);
+  if (region) cand = cand.filter(r=> normRegion(r.region)===region);
+  if (cand.length===1) return cand[0].id;
+  return null;
+}
+
+/* ========== 設定（インポート／エクスポート・Googleログイン） ========== */
+const settingsBtn=document.getElementById('settingsBtn');
+const settingsMenu=document.getElementById('settingsMenu');
+settingsBtn.addEventListener('click', (ev)=>{ ev.stopPropagation(); settingsMenu.style.display = (settingsMenu.style.display==='block') ? 'none' : 'block'; });
+document.addEventListener('click', (e)=>{ if(!settingsMenu.contains(e.target) && e.target!==settingsBtn){ settingsMenu.style.display='none'; }});
+
+document.getElementById('loginMi').addEventListener('click', async ()=>{
+  settingsMenu.style.display='none';
+  if(!await ensureGisReady()) return;
+  tokenClient.requestAccessToken({prompt:'consent'});
+});
+
+document.getElementById('importMi').addEventListener('click', ()=>{
+  settingsMenu.style.display='none';
+  const inp=Object.assign(document.createElement('input'),{type:'file',accept:'.ndjson,.jsonl'});
+  inp.onchange=async ()=>{
+    const text=await inp.files[0].text(); const lines=text.split(/\r?\n/).filter(Boolean);
+    const got=[]; let bad=0; for(const l of lines){ try{got.push(JSON.parse(l));}catch{bad++;} }
+    const cur=loadEntries(); const seen=new Set(cur.map(x=>x.id));
+    for(const e of got){ if(e && !seen.has(e.id)){ cur.push(e); seen.add(e.id); } }
+    const ok = saveEntries(cur);
+    renderList(cur);
+    alert(`インポート完了（新規 ${got.length-bad} 件／壊れ行 ${bad} 件）`);
+    scheduleDriveSave();
+    if(!ok) alert('注意：この環境では保存が制限されています。');
+  };
+  inp.click();
+});
+document.getElementById('exportMi').addEventListener('click', ()=>{
+  settingsMenu.style.display='none';
+  const nd=loadEntries().map(x=>JSON.stringify(x)).join('\n');
+  const blob=new Blob([nd],{type:'application/x-ndjson'});
+  const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(blob), download:`mofu_${ymdJST()}.ndjson`});
+  a.click(); URL.revokeObjectURL(a.href);
+});
+
+/* ========== Google Drive 同期（初回は向きを確認） ========== */
+const DRIVE_FILENAME='mofu_entries.ndjson';
+let tokenClient=null, accessToken=null, driveFileId=null;
+let didInitialDriveSync=false;
+const SCOPE='https://www.googleapis.com/auth/drive.appdata';
+const SYNC_DEBOUNCE_MS=1200;
+let syncTimer=null;
+
+function authHeaders(){ if(!accessToken) throw new Error('no access token'); return { 'Authorization': `Bearer ${accessToken}` }; }
+async function waitForGis(){ for(let i=0;i<50;i++){ if(window.google?.accounts?.oauth2) return; await new Promise(r=>setTimeout(r,100)); } throw new Error('GIS load fail'); }
+
+async function driveFindFileIdByName(name=DRIVE_FILENAME){
+  const params=new URLSearchParams({spaces:'appDataFolder', q:`name='${name.replace(/'/g,"\\'")}' and trashed=false`, fields:'files(id,name)', pageSize:'1'});
+  const res=await fetch(`https://www.googleapis.com/drive/v3/files?${params}`, {headers:authHeaders()});
+  if(!res.ok) throw new Error(`Drive list failed ${res.status}`); const j=await res.json();
+  return j.files?.[0]?.id||null;
+}
+async function driveDownloadFile(fileId){
+  const res=await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {headers:authHeaders()});
+  if(!res.ok) throw new Error(`Drive download failed ${res.status}`); return await res.text();
+}
+async function driveCreateFile(name, content){
+  const meta={name, parents:['appDataFolder']}; const boundary='mofu_'+Math.random().toString(16).slice(2);
+  const body=`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n--${boundary}\r\nContent-Type: application/x-ndjson\r\n\r\n${content}\r\n--${boundary}--`;
+  const res=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',{method:'POST', headers:{...authHeaders(),'Content-Type':`multipart/related; boundary=${boundary}`}, body});
+  if(!res.ok) throw new Error(`Drive create failed ${res.status}`); const j=await res.json(); return j.id;
+}
+async function driveUpdateFile(fileId, content){
+  const res=await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {method:'PATCH', headers:{...authHeaders(),'Content-Type':'application/x-ndjson'}, body:content});
+  if(!res.ok) throw new Error(`Drive update failed ${res.status}`);
+}
+
+function entriesToNdjson(arr){ return arr.map(x=>JSON.stringify(x)).join('\n'); }
+function ndjsonToEntries(text){ if(!text) return []; return text.split(/\r?\n/).filter(Boolean).map(l=>JSON.parse(l)); }
+function arrayLatestAt(arr){ return arr.reduce((m,e)=> Math.max(m, Date.parse(e.at||0)||0 ), 0); }
+
+async function ensureGisReady(){
+  try{ await waitForGis(); }catch{ alert('Googleのライブラリが読み込めませんでした。'); return false; }
+  if(!CLIENT_ID || !CLIENT_ID.endsWith('.apps.googleusercontent.com')){ alert('GoogleクライアントIDが未設定か不正です。'); return false; }
+  if(!ORIGIN_ALLOWED){ alert('このオリジンではDrive連携を無効化しています。'); return false; }
+  if(!tokenClient){
+    tokenClient=google.accounts.oauth2.initTokenClient({
+      client_id:CLIENT_ID, scope:SCOPE, callback: async (resp)=>{
+        if(resp.error){ console.error(resp); alert('Google接続に失敗しました'); return; }
+        accessToken=resp.access_token;
+        if(!didInitialDriveSync){ didInitialDriveSync=true; await runInitialSyncFlow(); }
+      }
     });
-    if (!res.ok) throw new Error('Drive create failed: ' + res.status);
-    const data = await res.json();
-    return data.id;
-  };
+  }
+  return true;
+}
 
-  // 3) 既存更新（mediaアップロード）
-  window.driveUpdateFile = async function(fileId, content) {
-    const res = await driveFetch(`${UPLOAD_V3}/files/${encodeURIComponent(fileId)}?uploadType=media`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/x-ndjson; charset=UTF-8' },
-      body: content || ''
+async function refreshAccessTokenSilent(){
+  return new Promise(async (resolve,reject)=>{
+    try{
+      await waitForGis();
+      if(!tokenClient){
+        tokenClient=google.accounts.oauth2.initTokenClient({ client_id:CLIENT_ID, scope:SCOPE,
+          callback:(resp)=>{ if(resp.error) reject(resp); else { accessToken=resp.access_token; resolve(resp); } }
+        });
+      }
+      tokenClient.requestAccessToken({prompt:'none'});
+    }catch(err){ reject(err); }
+  });
+}
+
+async function runInitialSyncFlow(){
+  try{
+    driveFileId = await driveFindFileIdByName();
+    let serverEntries=[], serverNd='';
+    if(driveFileId){
+      serverNd = await driveDownloadFile(driveFileId);
+      try{ serverEntries = ndjsonToEntries(serverNd); }catch{ serverEntries=[]; }
+    }
+    const local = loadEntries();
+    const localCount = local.length, serverCount=serverEntries.length;
+    const localLatest = arrayLatestAt(local), serverLatest = arrayLatestAt(serverEntries);
+    const fmt = (ts)=> ts? new Date(ts).toISOString().slice(0,19).replace('T',' ') : '—';
+    const msgHtml = `
+      <div>ローカル：<strong>${localCount}</strong> 件（最終 ${fmt(localLatest)}）</div>
+      <div>サーバー：<strong>${serverCount}</strong> 件（最終 ${fmt(serverLatest)}）</div>
+      <div style="margin-top:6px;color:#6b7280">どちらを<strong>正</strong>として反映しますか？</div>
+    `;
+    const syncDlg=document.getElementById('syncDlg');
+    document.getElementById('syncSummary').innerHTML=msgHtml;
+    const choice=await new Promise((resolve)=>{
+      function h(){ syncDlg.removeEventListener('close', h); resolve(syncDlg.returnValue); }
+      syncDlg.addEventListener('close', h); syncDlg.showModal();
     });
-    if (!res.ok) throw new Error('Drive update failed: ' + res.status);
-    return true;
-  };
 
-  console.info('mofu: Drive helpers installed');
+    if(choice==='localToServer'){
+      const nd=entriesToNdjson(local);
+      if(!driveFileId){ driveFileId = await driveCreateFile(DRIVE_FILENAME, nd); }
+      else{ await driveUpdateFile(driveFileId, nd); }
+      alert('サーバーへ上書きしました。以後は自動同期します。');
+    }else if(choice==='serverToLocal'){
+      localStorage.setItem(KEY_ENTRIES, JSON.stringify(serverEntries));
+      MEM_ENTRIES = serverEntries;
+      renderList(serverEntries);
+      alert('ローカルへ上書きしました。以後は自動同期します。');
+    }else{
+      alert('同期設定をキャンセルしました。（いつでも「設定→Googleログイン」から再設定できます）');
+    }
+  }catch(e){
+    console.error(e);
+    alert('同期初期設定に失敗しました。再度お試しください。');
+  }
+}
+
+function scheduleDriveSave(){
+  if(!accessToken) return;
+  clearTimeout(syncTimer);
+  syncTimer=setTimeout(async ()=>{
+    try{
+      const nd=entriesToNdjson(loadEntries());
+      if(!driveFileId){ driveFileId=await driveFindFileIdByName(); if(!driveFileId) driveFileId=await driveCreateFile(DRIVE_FILENAME, nd); else await driveUpdateFile(driveFileId, nd); }
+      else{ await driveUpdateFile(driveFileId, nd); }
+    }catch(e){
+      const msg=String(e||'');
+      if(msg.includes('401')||msg.includes('403')){
+        try{
+          await refreshAccessTokenSilent();
+          const nd=entriesToNdjson(loadEntries());
+          if(!driveFileId){ driveFileId=await driveFindFileIdByName(); if(!driveFileId) driveFileId=await driveCreateFile(DRIVE_FILENAME, nd); else await driveUpdateFile(driveFileId, nd); }
+          else{ await driveUpdateFile(driveFileId, nd); }
+        }catch(e2){ console.warn('Drive保存失敗（再試行も失敗）:', e2); }
+      }else{ console.warn('Drive保存失敗:', e); }
+    }
+  }, SYNC_DEBOUNCE_MS);
+}
+
+/* ========== 初期化 ========== */
+(async () => {
+  setStatus(riderStatus, false, '…');
+  setStatus(raceStatus,  false, '…');
+  renderList(loadEntries());
+  await Promise.allSettled([ fetchRiders(), fetchRaces() ]);
+  lastCaret = ta.selectionStart;
+  updateDropdown();
 })();
 </script>
-<!-- ▲▲▲ Drive API ヘルパ ここまで ▲▲▲ -->
-
-<!-- アプリ本体（モジュール版 or バンドル版のどちらかを使用） -->
-<!-- ▼モジュール版（開発時はこちらを推奨） -->
-<script type="module" src="./main.js"></script>
-<!-- ▼バンドル版（本番でrollup/esbuild等で dist/app.min.js を吐く場合はこちら）
-<script defer src="./dist/app.min.js"></script>
--->
-
 </body>
 </html>
