@@ -15,6 +15,7 @@
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 
 <style>
+html{ color-scheme: light; }  /* 常にライト扱いにする */
 :root{
   /* 基調カラー */
   --bg:#fafaf9;        /* 背景 */
@@ -37,22 +38,7 @@
   --shadow-lg:0 20px 40px rgba(15,23,42,.10);
 }
 
-/* 自動ダークモード（ユーザーの設定に追従） */
-@media (prefers-color-scheme: dark){
-  :root{
-    --bg:#0b1220;
-    --card:#0f172a;
-    --fg:#e5e7eb;
-    --muted:#94a3b8;
-    --line:#1f2937;
-    --brand:#60a5fa;
-    --brand-weak:#0b1b34;
-    --success:#34d399;
-    --danger:#f87171;
-    --warn:#fbbf24;
-    --hl:#2b2633;
-  }
-}
+
 
 /* ベース */
 *{box-sizing:border-box}
