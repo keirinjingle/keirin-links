@@ -16,26 +16,13 @@
 
 <style>
 :root{
-  /* Colors: neutral sand + single blue accent */
-  --bg:#FAFAF9;            /* page */
-  --card:#FFFFFF;          /* surfaces */
-  --fg:#111827;            /* text */
-  --muted:#6B7280;         /* secondary text */
-  --line:#E5E7EB;          /* borders */
-  --accent:#2563EB;        /* primary action */
-  --accent-weak:#EFF6FF;   /* soft bg for accent */
-  --success:#10B981;
-  --error:#EF4444;
-  --warn:#F59E0B;
-  --hl:#FEF3C7;
-  --shadow-sm:0 1px 2px rgba(0,0,0,.06);
-  --shadow-md:0 6px 18px rgba(0,0,0,.08);
+  --bg:#FAFAFA; --fg:#1F2937; --muted:#6B7280; --line:#E5E7EB;
+  --card:#FFFFFF; --accent:#2563EB; --accent-ink:#fff; --danger:#DC2626;
+  --ok:#16A34A; --warn:#F59E0B; --hl:#FEF3C7; --shadow-sm:0 1px 2px rgba(0,0,0,.06); --shadow-md:0 6px 18px rgba(0,0,0,.08);
 }
-
 *{box-sizing:border-box}
-html,body{height:100%}
+html,body{margin:0;padding:0}
 body{
-  margin:0;
   font-family:system-ui,-apple-system,Segoe UI,Roboto,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
   background:var(--bg); color:var(--fg); line-height:1.6;
 }
@@ -53,303 +40,130 @@ header{position:sticky;top:0;background:var(--card);border-bottom:1px solid var(
 .nav-right .links{display:flex; gap:.35rem; align-items:center}
 .nav-right .links a{padding:.35rem .55rem; border-radius:.5rem; color:#374151}
 
-/* Chips (status) */
-.badge{
-  display:inline-flex; align-items:center; gap:.4rem;
-  padding:.25rem .55rem; border:1px solid var(--line); border-radius:999px;
-  font-size:.8rem; background:#F9FAFB; color:#374151;
-}
-.badge .dot{width:.5rem;height:.5rem;border-radius:999px;background:var(--muted);display:inline-block}
-.badge.ok .dot{background:var(--success)}
-.badge.ng .dot{background:var(--error)}
-.badge .mark{color:inherit}
-
-/* Main wrapper */
-.wrap{max-width:900px;margin:16px auto;padding:0 12px}
-
-/* Buttons */
+/* ボタン */
 .btn{
-  appearance:none; cursor:pointer;
-  border:1px solid var(--line); background:var(--card);
-  padding:.6rem .9rem; border-radius:.8rem; font-size:.95rem;
+  appearance:none; border:1px solid var(--line); background:var(--card); color:var(--fg);
+  padding:.45rem .7rem; border-radius:.55rem; cursor:pointer;
+  box-shadow:var(--shadow-sm);
 }
-.btn:hover{background:#F8FAFC}
-.btn:active{transform:translateY(1px)}
-.btn-primary{
-  background:var(--accent); color:#fff; border-color:transparent; box-shadow:var(--shadow-sm);
-}
-.btn-primary:hover{filter:brightness(0.98)}
-.btn-link{color:var(--accent); border:none; background:transparent; padding:.45rem .6rem; border-radius:.6rem}
-.btn-link:hover{background:var(--accent-weak)}
+.btn:hover{background:#F9FAFB}
+.btn.primary{background:var(--accent); color:var(--accent-ink); border-color:transparent}
+.btn.ghost{border-color:transparent; background:transparent}
 
-/* ▼ ヘッダーのリンク下線を完全に無効化 */
-.nav-right a,
-.nav-right a:link,
-.nav-right a:visited,
-.nav-right a:hover,
-.nav-right a:active,
-.btn,
-.btn:link,
-.btn:visited,
-.btn:hover,
-.btn:active{
-  text-decoration:none;
-}
+/* メイン */
+main{max-width:900px; margin:1rem auto; padding:0 1rem}
 
-/* Toolbar */
-.toolbar{display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; margin:.6rem 0 .4rem}
+/* サジェストの注意 */
+.hint{font-size:.9rem; color:var(--muted); background:var(--hl); padding:.5rem .7rem; border-radius:.5rem}
 
-/* Inputs */
-textarea, input[type="text"]{
-  width:100%; font-size:16px; padding:12px 12px;
-  border:1px solid var(--line); border-radius:12px; background:var(--card);
-}
-textarea{min-height:120px; resize:vertical}
-textarea:focus, input[type="text"]:focus{
-  outline:2px solid transparent; box-shadow:0 0 0 2px #93C5FD inset, var(--shadow-sm);
-}
+/* 検索ダイアログ（簡易） */
+dialog{border:none; border-radius:12px; padding:0; width:min(880px, 96vw); box-shadow:var(--shadow-md)}
+dialog .dlg-head{display:flex; justify-content:space-between; align-items:center; padding:.8rem 1rem; border-bottom:1px solid var(--line)}
+dialog .dlg-body{padding:1rem}
+dialog .dlg-foot{display:flex; justify-content:flex-end; gap:.5rem; padding:1rem; border-top:1px solid var(--line)}
 
-/* Cards */
-.cards{margin-top:14px}
-.card{
-  padding:12px 12px; border:1px solid var(--line); border-radius:12px;
-  background:var(--card); margin-bottom:10px; box-shadow:var(--shadow-sm);
-}
-.head{font-size:.95rem; margin-bottom:6px; display:flex; gap:.5rem; flex-wrap:wrap; align-items:center}
-.head .date{font-weight:600}
-.raw{white-space:pre-wrap; word-break:break-word; font-family:ui-sans-serif; font-size:.95rem}
-.linklike{color:var(--accent); background:transparent; border:none; padding:.2rem .4rem; cursor:pointer}
-
-/* Dropdown (suggest) */
-#taWrap{position:relative}
-.dropdown{
-  position:absolute; left:0; right:0; top:100%; margin-top:6px;
-  background:var(--card); border:1px solid var(--line); border-radius:12px;
-  box-shadow:var(--shadow-md); display:none; overflow:auto; max-height:40vh; z-index:40;
-  padding-bottom:max(8px, env(safe-area-inset-bottom));
-  overscroll-behavior:contain; -webkit-overflow-scrolling:touch; touch-action:pan-y;
-}
-.item{padding:.55rem .7rem; cursor:pointer; font-size:.95rem; display:flex; gap:.5rem; align-items:center}
-.item:hover{background:#F3F4F6}
-.item.is-active{background:#EEF2FF}
-.type{font-size:.7rem; color:#fff; background:#9CA3AF; border-radius:999px; padding:0 .4rem}
-
-/* Settings menu */
-.settings{position:relative}
-.settings-menu{
-  position:absolute; right:0; top:calc(100% + 6px); background:var(--card);
-  border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow-md);
-  display:none; min-width:220px; z-index:50;
-}
-.settings-menu .mi{padding:.55rem .8rem; cursor:pointer; border-bottom:1px solid #F1F5F9}
-.settings-menu .mi:last-child{border-bottom:none}
-.settings-menu .mi:hover{background:#F8FAFC}
-
-/* Tabs (search) */
-.tabs{display:flex; gap:.4rem; border-bottom:1px solid var(--line); padding:0 .2rem}
-.tab{appearance:none; background:transparent; border:none; padding:.65rem .85rem; cursor:pointer; border-bottom:2px solid transparent}
-.tab.is-active{border-color:var(--accent); color:#1F2937; font-weight:600}
-.tabpanel{display:none; padding:.8rem 0}
-.tabpanel.is-active{display:block}
-
-/* Lists */
-.list{display:grid; gap:.5rem}
-.pill{display:inline-flex; align-items:center; gap:.35rem; border:1px solid var(--line); border-radius:999px; padding:.25rem .55rem; font-size:.85rem}
-.muted{color:var(--muted)}
-.small{font-size:.85rem}
-.kbd{font-family:ui-monospace, Menlo, monospace; padding:0 .35rem; border:1px solid var(--line); border-radius:.35rem; background:#F9FAFB}
-
-/* Race suggest */
-.race-suggest{max-height:40vh; overflow:auto; border:1px solid var(--line); border-radius:10px; padding:.3rem; background:var(--card)}
-.race-suggest .row{padding:.45rem .55rem; border-radius:.6rem; cursor:pointer}
-.race-suggest .row:hover{background:#F3F4F6}
-
-/* Player + notes */
-.player-list{display:grid; gap:.4rem}
-.player-item{padding:.45rem .55rem; border:1px solid var(--line); border-radius:10px; cursor:pointer}
-.player-item:hover{background:#F8FAFC}
-.note-list .note{padding:.45rem .55rem; border:1px solid var(--line); border-radius:10px; background:#fff}
-
-/* Dialogs */
-dialog{border:none; border-radius:12px; max-width:860px; width:96%}
-dialog::backdrop{background:rgba(0,0,0,.25)}
-
-/* Footer */
-.footer{color:var(--muted); font-size:.85rem; text-align:center; padding:20px 8px}
-
-/* Highlight */
-.hl{background:var(--hl); font-weight:700}
-
-
-
-/* --- header layout tweaks --- */
-.status-group{ display:flex; gap:.5rem; margin-left:.75rem; }
-.nav-right{ margin-left:auto; display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
-
-/* pill-like ghost buttons for header links */
-.btn-pill{ border-radius:999px; padding:.5rem .8rem; }
-.btn-ghost{ background:var(--card); border:1px solid var(--line); color:#374151; }
-.btn-ghost:hover{ background:#F3F4F6; }
-
-/* make existing badges a touch more pill-like to match */
-.badge{ border-radius:999px; }
-
-/* ▼ スマホ時：2段目（nav-right）を右寄せで独立行にする */
-@media (max-width: 640px){
-  .bar{ flex-wrap: wrap; }
-  .nav-right{
-    flex:1 1 100%;
-    justify-content:flex-end;
-    margin-left:0;
-  }
-  .status-group{ flex-wrap:wrap; }
-}
+textarea{width:100%; min-height:110px; padding:.6rem .7rem; border:1px solid var(--line); border-radius:.5rem; resize:vertical}
+hr{border:none; border-top:1px solid var(--line); margin:1rem 0}
 </style>
-
 </head>
+
 <body>
-<header>
-  <div class="bar">
-    <div class="title">🐾 もふメモ</div>
-
-    <!-- もふメモの“右隣”にステータス -->
-    <div class="status-group">
-      <span id="riderStatus" class="badge">
-        <span class="dot"></span> 選手DB <span class="mark">…</span>
-      </span>
-      <span id="raceStatus" class="badge">
-        <span class="dot"></span> レース情報 <span class="mark">…</span>
-      </span>
-    </div>
-
-    <!-- 右端にボタン風リンク（使い方 / 設定 / 寄付） -->
-    <div class="nav-right">
-      <a class="btn btn-pill btn-ghost" href="https://keirinjingle.github.io/keirin-links/howto.html" target="_blank" rel="noopener">使い方</a>
-
-      <div class="settings">
-        <button id="settingsBtn" class="btn btn-pill btn-ghost">設定 ▾</button>
-        <div id="settingsMenu" class="settings-menu">
-          <div id="loginMi" class="mi">Googleログイン</div>
-          <div id="importMi" class="mi">インポート（NDJSON）</div>
-          <div id="exportMi" class="mi">エクスポート（NDJSON）</div>
+  <header>
+    <div class="bar">
+      <div class="title">🐾 もふメモ</div>
+      <div class="nav-right">
+        <div class="links">
+          <a href="#" id="howtoLink" class="btn ghost">使い方</a>
+          <div class="dropdown">
+            <button class="btn" id="settingsBtn">設定 ▾</button>
+          </div>
+          <a href="#" id="donateLink" class="btn ghost">寄付</a>
         </div>
       </div>
-
-      <a class="btn btn-pill btn-ghost" href="https://keirinjingle.github.io/keirin-links/donation.html" target="_blank" rel="noopener">寄付</a>
     </div>
-  </div>
-</header>
+  </header>
 
-
-
-<main class="wrap">
-  <div class="toolbar">
-    <button id="inlineSlash" class="btn" title="/ を挿入">/</button>
-    <button id="openSearch" class="btn" title="Ctrl/Cmd+K でも開けます">レース検索</button>
-    <button id="addBtn" class="btn btn-primary">登録</button>
-  </div>
-
-  <div id="taWrap" style="position:relative">
-    <textarea id="ta" placeholder="例）- 函館6R 先行注意 /まくり +展開 @山田太郎"></textarea>
-    <div id="dropdown" class="dropdown"></div>
-  </div>
-
-  <section id="cards" class="cards"></section>
-
-  <div class="footer">設定→Googleログインをするとデータはご自身のGoogleDriveに保存されます。複数端末で共有できます。</div>
-  <div class="footer">（C）ほっもふ（<a href="https://x.com/_yuyuyu22">連絡先</a>）2025</div>
-</main>
-
-<!-- 検索 -->
-<dialog id="searchDlg">
-  <div style="padding:12px 14px; display:grid; gap:10px;">
-    <div style="display:flex;align-items:center;gap:.5rem;justify-content:space-between">
-      <strong>検索</strong>
-      <button id="searchClose" class="btn">閉じる</button>
+  <main>
+    <div class="hint">
+      ・「/」で補完を開きます（選手／当日レース／戦法／タグ）。<br/>
+      ・使い方は <a href="https://keirinjingle.github.io/keirin-links/howto.html" target="_blank">詳細な使い方はこちら</a>。
     </div>
 
-    <div class="tabs">
-      <button id="tabRace"  class="tab is-active">レース内検索</button>
-      <button id="tabFull"  class="tab">全文検索</button>
+    <!-- 入力とツールバー -->
+    <section style="margin-top:1rem">
+      <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-bottom:.5rem">
+        <button id="slashBtn" class="btn">/</button>
+        <button id="openSearchBtn" class="btn">レース検索</button>
+        <button id="addTopBtn" class="btn primary">登録</button>
+      </div>
+      <textarea id="memoInput" placeholder="ここにメモ。/ で補完（選手・レース・戦法・タグ）"></textarea>
+    </section>
+
+    <!-- 一覧 -->
+    <section style="margin-top:1rem">
+      <div id="entriesList"></div>
+    </section>
+  </main>
+
+  <!-- 設定メニューのポップオーバー（簡易） -->
+  <div id="settingsMenu" style="position:fixed; right:10px; top:58px; background:var(--card); border:1px solid var(--line); border-radius:10px; box-shadow:var(--shadow-md); padding:.5rem; display:none; z-index:40; min-width:260px">
+    <div style="padding:.35rem .5rem; font-weight:700">設定</div>
+    <hr/>
+    <div style="display:flex; flex-direction:column; gap:.4rem; padding:.3rem .5rem">
+      <button id="googleLoginBtn" class="btn">Googleログイン</button>
+      <button id="exportBtn" class="btn">エクスポート（NDJSON）</button>
+      <button id="importBtn" class="btn">インポート（NDJSON）</button>
     </div>
+  </div>
 
-    <!-- ▼ レース内検索 -->
-    <div id="panelRace" class="tabpanel is-active">
-      <div class="list">
-        <div style="display:flex; gap:.6rem; align-items:center; flex-wrap:wrap;">
-          <input id="raceSearchInput" type="text" placeholder="例：函館 6R / 立川6R" style="width:32ch;max-width:60vw;padding:.4rem .6rem;border:1px solid var(--line);border-radius:.6rem">
-          <button id="raceSearchClear" class="btn">クリア</button>
-          <span class="muted small">当日の会場とR番号から検索</span>
-        </div>
-        <div id="raceSuggest" class="race-suggest"></div>
+  <!-- 検索ダイアログ -->
+  <dialog id="searchDlg">
+    <div class="dlg-head">
+      <div>検索</div>
+      <button class="btn ghost" id="closeSearchBtn">×</button>
+    </div>
+    <div class="dlg-body">
+      <div style="display:flex; gap:.5rem; margin-bottom:.5rem">
+        <button id="tabRaceBtn" class="btn primary">レース内検索</button>
+        <button id="tabFullBtn" class="btn">全文検索</button>
+      </div>
 
-        <div id="raceView" class="card" style="display:none">
-          <div class="head">
-            <span class="date" id="raceHead"></span>
-            <a id="raceEntryLink" class="btn-link" href="#" target="_blank" rel="noopener">出走表</a>
-            <a id="raceResultLink" class="btn-link" href="#" target="_blank" rel="noopener" style="display:none">結果</a>
-          </div>
-          <div class="player-list" id="playerList"></div>
-        </div>
-
-        <div id="playerNotesWrap" class="card" style="display:none">
-          <div class="head"><strong id="playerNotesHead">@選手 の過去メモ</strong></div>
-          <div id="playerNotes" class="note-list"></div>
-        </div>
-
-        <div id="newMemoWrap" class="card" style="display:none">
-          <div class="head"><strong>メモを追加</strong></div>
-          <textarea id="newMemoTa" placeholder="- 函館6R … @選手名"></textarea>
-          <div style="display:flex; gap:.5rem; margin-top:.5rem;">
-            <button id="saveMemoBtn" class="btn btn-primary">登録</button>
+      <!-- タブ: レース内検索 -->
+      <div id="raceTab">
+        <div id="raceSuggestWrap" style="min-height:120px"></div>
+        <hr/>
+        <div id="newMemoWrap" style="display:none">
+          <div style="font-weight:700; margin-bottom:.2rem">メモを追加</div>
+          <textarea id="newMemoTa" placeholder="このレースに紐づくメモを記入"></textarea>
+          <div style="display:flex; gap:.5rem; justify-content:flex-end; margin-top:.5rem">
+            <button id="saveMemoBtn" class="btn primary">登録</button>
             <button id="cancelMemoBtn" class="btn">キャンセル</button>
           </div>
-          <div id="newMemoTip" class="muted small" style="margin-top:.25rem">※ 登録すると一覧に即反映されます</div>
         </div>
       </div>
-    </div>
 
-    <!-- ▼ 全文検索 -->
-    <div id="panelFull" class="tabpanel">
-      <div style="display:flex; gap:.6rem; align-items:center; flex-wrap:wrap;">
-        <input id="searchInput" type="text" placeholder="語句を入力（raw.includes）" style="width:46ch;max-width:68vw;padding:.4rem .6rem;border:1px solid var(--line);border-radius:.6rem">
-        <span class="muted small">ヒント：<span class="kbd">@名前</span> や <span class="kbd">+タグ</span> でも検索できます</span>
+      <!-- タブ: 全文検索 -->
+      <div id="fullTab" style="display:none">
+        <input id="searchInput" placeholder="キーワードで検索" style="width:100%; padding:.55rem .65rem; border:1px solid var(--line); border-radius:.5rem"/>
+        <div id="searchResult" style="margin-top:.6rem"></div>
       </div>
-      <div id="searchCount" style="color:#6b7280;margin-top:.4rem"></div>
-      <div id="searchList" style="margin-top:.25rem; max-height:60vh; overflow:auto;"></div>
     </div>
-  </div>
-</dialog>
+    <div class="dlg-foot">
+      <button class="btn" id="clearSearchBtn">クリア</button>
+      <button class="btn primary" id="goTopBtn">TOPに戻る</button>
+    </div>
+  </dialog>
 
-<!-- 初回同期の向き確認 -->
-<dialog id="syncDlg">
-  <form method="dialog" style="padding:14px 16px; display:grid; gap:12px; max-width:720px;">
-    <h3 style="margin:0;">Google 同期の初期設定</h3>
-    <div id="syncSummary" style="color:#374151; line-height:1.6"></div>
-    <div style="background:#fff7ed;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;color:#9a3412;font-size:.9rem">
-      ※ どちらか一方に<strong>上書き</strong>します。必要なら先にエクスポートでバックアップしてください。
-    </div>
-    <div style="display:flex; gap:.5rem; justify-content:flex-end">
-      <button value="localToServer" class="btn btn-primary">ローカル→サーバーに上書き</button>
-      <button value="serverToLocal" class="btn">サーバー→ローカルに上書き</button>
-      <button value="cancel" class="btn">キャンセル</button>
-    </div>
-  </form>
-</dialog>
-  <script defer src="dist/app.min.js"></script>
+<!-- ========== GIS (Google Identity Services) と Drive 同期ヘルパ ========== -->
 <script>
 (() => {
-  // 1) クライアントIDとスコープ
-  const meta = document.querySelector('meta[name="mofu:google-client-id"]');
-  const CLIENT_ID = meta ? meta.content : '';
-  const SCOPE = [
-    'https://www.googleapis.com/auth/drive.appdata',
-    'https://www.googleapis.com/auth/drive.file'
-  ].join(' ');
+  const CLIENT_ID = (document.querySelector('meta[name="mofu:google-client-id"]')?.content || '').trim();
+  let tokenClient = null;
+  let accessToken = null;
 
-  // 2) GIS 本体が来るまで待つユーティリティ
-  function waitGisReady(timeoutMs = 6000){
-    return new Promise((resolve) => {
+  // 1) GIS準備
+  function waitGisReady(timeoutMs=5000){
+    return new Promise((resolve)=>{
       const t0 = Date.now();
       (function loop(){
         const ok = !!(window.google && google.accounts && google.accounts.oauth2);
@@ -360,46 +174,145 @@ dialog::backdrop{background:rgba(0,0,0,.25)}
     });
   }
 
-  // 3) 外部公開：ensureGisReady（app.js から呼ばれる）
+  // 2) 外部公開：ログイン準備（app.js から呼ばれる）
   window.ensureGisReady = async function(){
     const ok = await waitGisReady();
     if (!ok) { console.error('GIS not loaded'); alert('Googleログインの準備に失敗しました'); return false; }
 
-    if (!window.tokenClient){
+    if (!tokenClient){
       if (!CLIENT_ID){ alert('Google Client ID が見つかりません'); return false; }
-      window.tokenClient = google.accounts.oauth2.initTokenClient({
+
+      tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: CLIENT_ID,
-        scope: SCOPE,
+        scope: 'https://www.googleapis.com/auth/drive.file',
         callback: (resp) => {
           if (resp && resp.access_token){
-            window.accessToken = resp.access_token;
-            console.log('mofu: got access token', resp.expires_in);
-            // 任意：ログイン完了後に自動同期したい場合のみ有効化
-            if (typeof window.manualDriveSync === 'function') window.manualDriveSync();
-          } else if (resp && resp.error){
-            console.error('tokenClient callback error', resp);
-            alert('Googleログインに失敗しました');
+            accessToken = resp.access_token;
+            window.accessToken = accessToken;
+            console.info('mofu: got access token');
+          }else{
+            console.warn('mofu: no access token in callback', resp);
           }
         }
       });
     }
+
+    // 最初のトークン要求
+    tokenClient.requestAccessToken({ prompt: 'consent' });
     return true;
   };
 
-  // 4) 任意：有効期限が切れたらサイレント更新
+  // 3) 外部公開：サイレント更新（401時の再試行など）
   window.refreshAccessTokenSilent = async function(){
-    await waitGisReady();
+    const ok = await waitGisReady();
+    if (!ok || !tokenClient) return false;
+
     return new Promise((resolve) => {
-      window.tokenClient.requestAccessToken({ prompt: '' });
-      // callback で window.accessToken が更新される
-      setTimeout(()=> resolve(!!window.accessToken), 500);
+      tokenClient.callback = (resp) => {
+        const has = !!(resp && resp.access_token);
+        if (has){
+          accessToken = resp.access_token;
+          window.accessToken = accessToken;
+        }
+        resolve(has);
+      };
+      tokenClient.requestAccessToken({ prompt: '' }); // consent なし
     });
   };
-
-  // （Drive同期ヘルパをここに置いている場合は window.driveFindFileIdByName などもこのスクリプト内で公開）
 })();
 </script>
 
+<!-- ▼▼▼ ここから：Drive API ヘルパ3関数を公開（必須） ▼▼▼ -->
+<script>
+(() => {
+  const DRIVE_V3 = 'https://www.googleapis.com/drive/v3';
+  const UPLOAD_V3 = 'https://www.googleapis.com/upload/drive/v3';
+
+  async function ensureAccessToken() {
+    if (window.accessToken) return true;
+    if (typeof window.refreshAccessTokenSilent === 'function') {
+      const ok = await window.refreshAccessTokenSilent();
+      return !!ok;
+    }
+    return false;
+  }
+
+  async function driveFetch(url, opt = {}, retry = true) {
+    const ok = await ensureAccessToken();
+    if (!ok) throw new Error('No access token. Please Google-login first.');
+
+    const res = await fetch(url, {
+      ...opt,
+      headers: {
+        'Authorization': `Bearer ${window.accessToken}`,
+        ...(opt.headers || {})
+      }
+    });
+
+    // 401 → トークン失効の可能性。1回だけ再取得して再試行。
+    if (res.status === 401 && retry && typeof window.refreshAccessTokenSilent === 'function') {
+      const r = await window.refreshAccessTokenSilent();
+      if (r) return driveFetch(url, opt, /*retry*/false);
+    }
+    return res;
+  }
+
+  // 1) 名前でファイルIDを探す
+  window.driveFindFileIdByName = async function(name) {
+    const q = encodeURIComponent(`name='${name.replace(/'/g, "\\'")}' and trashed=false`);
+    const url = `${DRIVE_V3}/files?q=${q}&fields=files(id,name)&spaces=drive&pageSize=10`;
+    const res = await driveFetch(url, { method: 'GET' });
+    if (!res.ok) throw new Error('Drive list failed: ' + res.status);
+    const data = await res.json();
+    return (data.files && data.files[0] && data.files[0].id) || null;
+  };
+
+  // 2) 新規作成（multipart/related）
+  window.driveCreateFile = async function(name, content) {
+    const boundary = 'mofu-' + Math.random().toString(16).slice(2);
+    const meta = { name, mimeType: 'application/x-ndjson' }; // NDJSON想定
+
+    const body =
+      `--${boundary}\r\n` +
+      `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
+      `${JSON.stringify(meta)}\r\n` +
+      `--${boundary}\r\n` +
+      `Content-Type: application/x-ndjson; charset=UTF-8\r\n\r\n` +
+      `${content || ''}\r\n` +
+      `--${boundary}--`;
+
+    const res = await driveFetch(`${UPLOAD_V3}/files?uploadType=multipart&fields=id`, {
+      method: 'POST',
+      headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+      body
+    });
+    if (!res.ok) throw new Error('Drive create failed: ' + res.status);
+    const data = await res.json();
+    return data.id;
+  };
+
+  // 3) 既存更新（mediaアップロード）
+  window.driveUpdateFile = async function(fileId, content) {
+    const res = await driveFetch(`${UPLOAD_V3}/files/${encodeURIComponent(fileId)}?uploadType=media`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/x-ndjson; charset=UTF-8' },
+      body: content || ''
+    });
+    if (!res.ok) throw new Error('Drive update failed: ' + res.status);
+    return true;
+  };
+
+  console.info('mofu: Drive helpers installed');
+})();
+</script>
+<!-- ▲▲▲ Drive API ヘルパ ここまで ▲▲▲ -->
+
+<!-- アプリ本体（モジュール版 or バンドル版のどちらかを使用） -->
+<!-- ▼モジュール版（開発時はこちらを推奨） -->
+<script type="module" src="./main.js"></script>
+<!-- ▼バンドル版（本番でrollup/esbuild等で dist/app.min.js を吐く場合はこちら）
+<script defer src="./dist/app.min.js"></script>
+-->
 
 </body>
 </html>
