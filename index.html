@@ -397,6 +397,9 @@ dialog::backdrop{background:rgba(0,0,0,.25)}
             } else {
               window.accessToken = resp.access_token;
               console.log('mofu: got access token (expires_in s):', resp.expires_in);
+
+              // ここを追記（任意）：ログイン完了後にDriveへ即同期
+              if (typeof window.manualDriveSync === 'function') window.manualDriveSync();
               // attempt to flush pending if app exposes a flush
               if(typeof window.tryFlushPendingUpload === 'function') tryFlushPendingUpload().catch(()=>{});
             }
