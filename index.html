@@ -337,5 +337,165 @@ dialog::backdrop{background:rgba(0,0,0,.25)}
   </form>
 </dialog>
   <script defer src="dist/app.min.js"></script>
+  <script>
+/*
+  Minimal global wrappers for Google Drive / GIS helpers.
+  Paste this AFTER your bundled app (dist/app.min.js).
+  This will provide:
+    - window.ensureGisReady()
+    - window.refreshAccessTokenSilent()
+    - window.driveFindFileIdByName()
+    - window.driveCreateFile()
+    - window.driveUpdateFile()
+  It uses Google Identity Services (GSI). Make sure meta mofu:google-client-id exists.
+*/
+
+(function(){
+  // config
+  const CLIENT_ID = document.querySelector('meta[name="mofu:google-client-id"]')?.content || '';
+  const SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
+  if(!CLIENT_ID) {
+    console.warn('mofu: Google CLIENT_ID meta not found; Google features will be disabled until you add the meta tag.');
+  }
+
+  // state
+  window.tokenClient = window.tokenClient || null;
+  window.accessToken = window.accessToken || null;
+  window.driveFileId = window.driveFileId || null;
+
+  // wait-for-gsi util
+  function waitForGisLoaded(timeout = 3000){
+    return new Promise((resolve, reject) => {
+      if(window.google?.accounts?.oauth2) return resolve();
+      const start = Date.now();
+      const t = setInterval(()=>{
+        if(window.google?.accounts?.oauth2){ clearInterval(t); resolve(); }
+        else if(Date.now() - start > timeout){ clearInterval(t); reject(new Error('GSI load timeout')); }
+      }, 100);
+    });
+  }
+
+  // ensureGisReady: initialize tokenClient
+  window.ensureGisReady = async function(){
+    if(!CLIENT_ID) { alert('Google Client ID が未設定です。index.html に meta tag を追加してください。'); return false; }
+    try{
+      await waitForGisLoaded();
+    }catch(e){
+      console.warn('mofu: GSI not loaded', e);
+      alert('Googleライブラリが読み込まれていません。ネットワーク接続を確認してください。');
+      return false;
+    }
+    if(!window.tokenClient){
+      try{
+        window.tokenClient = google.accounts.oauth2.initTokenClient({
+          client_id: CLIENT_ID,
+          scope: SCOPE,
+          callback: (resp) => {
+            if(resp.error){
+              console.error('tokenClient callback error', resp);
+              // keep accessToken null on error
+            } else {
+              window.accessToken = resp.access_token;
+              console.log('mofu: got access token (expires_in s):', resp.expires_in);
+              // attempt to flush pending if app exposes a flush
+              if(typeof window.tryFlushPendingUpload === 'function') tryFlushPendingUpload().catch(()=>{});
+            }
+          }
+        });
+      }catch(err){
+        console.error('mofu: initTokenClient failed', err);
+        alert('Google TokenClient の初期化に失敗しました。');
+        return false;
+      }
+    }
+    return true;
+  };
+
+  // refreshAccessTokenSilent: try to get token with prompt:none
+  window.refreshAccessTokenSilent = async function(){
+    try{
+      await waitForGisLoaded();
+      if(!window.tokenClient){
+        // initialize token client if not present
+        await window.ensureGisReady();
+      }
+      return new Promise((resolve, reject) => {
+        try {
+          tokenClient.requestAccessToken({ prompt: 'none' });
+          // callback sets window.accessToken; we poll shortly
+          const start = Date.now();
+          (function check(){
+            if(window.accessToken) return resolve(window.accessToken);
+            if(Date.now() - start > 4000) return reject(new Error('silent token fetch timeout'));
+            setTimeout(check, 150);
+          })();
+        } catch(e) {
+          reject(e);
+        }
+      });
+    }catch(e){
+      console.warn('mofu: refreshAccessTokenSilent failed', e);
+      throw e;
+    }
+  };
+
+  // Drive helper low-level wrappers using existing app functions if present or REST fallback.
+  // These functions expect window.accessToken to be set.
+  window.driveFindFileIdByName = window.driveFindFileIdByName || (async function(name='mofu_entries.ndjson'){
+    if(!window.accessToken) throw new Error('no-access-token');
+    const params = new URLSearchParams({ spaces:'appDataFolder', q:`name='${name.replace(/'/g,"\\'")}' and trashed=false`, fields:'files(id,name)', pageSize:'1' });
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files?${params.toString()}`, { headers: { Authorization: 'Bearer ' + window.accessToken } });
+    if(!res.ok) throw new Error('Drive list failed: ' + res.status);
+    const j = await res.json();
+    return j.files?.[0]?.id || null;
+  });
+
+  window.driveCreateFile = window.driveCreateFile || (async function(name='mofu_entries.ndjson', contentNdjson=''){
+    if(!window.accessToken) throw new Error('no-access-token');
+    const meta = { name, parents:['appDataFolder'] };
+    const boundary = 'mofu_' + Math.random().toString(16).slice(2);
+    const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n--${boundary}\r\nContent-Type: application/x-ndjson\r\n\r\n${contentNdjson}\r\n--${boundary}--`;
+    const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + window.accessToken, 'Content-Type': `multipart/related; boundary=${boundary}` },
+      body
+    });
+    if(!res.ok) throw new Error('Drive create failed: ' + res.status);
+    const j = await res.json();
+    window.driveFileId = j.id || window.driveFileId;
+    return window.driveFileId;
+  });
+
+  window.driveUpdateFile = window.driveUpdateFile || (async function(fileId, contentNdjson){
+    if(!window.accessToken) throw new Error('no-access-token');
+    if(!fileId) throw new Error('no-fileId');
+    const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
+      method: 'PATCH',
+      headers: { Authorization: 'Bearer ' + window.accessToken, 'Content-Type': 'application/x-ndjson' },
+      body: contentNdjson
+    });
+    if(!res.ok) {
+      throw new Error('Drive update failed: ' + res.status);
+    }
+    return true;
+  });
+
+  // helper to flush pending upload if app exposes tryFlushPendingUpload
+  async function tryFlushPendingUpload(){
+    if(typeof window.tryFlushPendingUpload === 'function'){
+      try{
+        await window.tryFlushPendingUpload();
+        console.log('mofu: tryFlushPendingUpload() done');
+      }catch(e){
+        console.warn('mofu: tryFlushPendingUpload() failed', e);
+      }
+    }
+  }
+
+  // expose small debug info
+  console.log('mofu: GIS wrappers installed (CLIENT_ID present?)', !!CLIENT_ID);
+})();
+</script>
+
 </body>
 </html>
