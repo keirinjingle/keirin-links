@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>もふメモ | Riders/Races + Drive Sync (robust)</title>
-<meta name="description" content="競輪メモ。ローカル保存＋/サジェスト（戦法・選手・レース・タグ）＋素朴検索＋Drive同期。" />
+<title>もふメモ | Riders/Races + Drive Sync (robust + race search)</title>
+<meta name="description" content="競輪メモ。ローカル保存＋/サジェスト（戦法・選手・レース・タグ）＋素朴検索＋Drive同期＋レース検索。" />
 
 <!-- ▼ あなたの Client ID（.apps.googleusercontent.com で終わる） -->
 <meta name="mofu:google-client-id" content="451004577569-euhu5f661onevj9a0tlsfr9i4jntm6jm.apps.googleusercontent.com">
@@ -15,86 +15,244 @@
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 
 <style>
+:root{
+  /* Colors: neutral sand + single blue accent */
+  --bg:#FAFAF9;            /* page */
+  --card:#FFFFFF;          /* surfaces */
+  --fg:#111827;            /* text */
+  --muted:#6B7280;         /* secondary text */
+  --line:#E5E7EB;          /* borders */
+  --accent:#2563EB;        /* primary action */
+  --accent-weak:#EFF6FF;   /* soft bg for accent */
+  --success:#10B981;
+  --error:#EF4444;
+  --warn:#F59E0B;
+  --hl:#FEF3C7;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.06);
+  --shadow-md:0 6px 18px rgba(0,0,0,.08);
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;
+  font-family:system-ui,-apple-system,Segoe UI,Roboto,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+  background:var(--bg); color:var(--fg); line-height:1.6;
+}
+
+/* Header (1段) */
+header{position:sticky;top:0;background:var(--card);border-bottom:1px solid var(--line);z-index:30}
+.bar{
+  display:flex; align-items:center; gap:.75rem;
+  padding:.65rem .9rem; flex-wrap:wrap;
+}
+.title{font-weight:800; font-size:1.1rem}
+
+/* 右側ナビ（使い方/設定/寄付） */
+.nav-right{margin-left:auto; display:flex; align-items:center; gap:.5rem; flex-wrap:wrap}
+.nav-right .links{display:flex; gap:.35rem; align-items:center}
+.nav-right .links a{padding:.35rem .55rem; border-radius:.5rem; color:#374151}
+
+/* Chips (status) */
+.badge{
+  display:inline-flex; align-items:center; gap:.4rem;
+  padding:.25rem .55rem; border:1px solid var(--line); border-radius:999px;
+  font-size:.8rem; background:#F9FAFB; color:#374151;
+}
+.badge .dot{width:.5rem;height:.5rem;border-radius:999px;background:var(--muted);display:inline-block}
+.badge.ok .dot{background:var(--success)}
+.badge.ng .dot{background:var(--error)}
+.badge .mark{color:inherit}
+
+/* Main wrapper */
+.wrap{max-width:900px;margin:16px auto;padding:0 12px}
+
+/* Buttons */
+.btn{
+  appearance:none; cursor:pointer;
+  border:1px solid var(--line); background:var(--card);
+  padding:.6rem .9rem; border-radius:.8rem; font-size:.95rem;
+}
+.btn:hover{background:#F8FAFC}
+.btn:active{transform:translateY(1px)}
+.btn-primary{
+  background:var(--accent); color:#fff; border-color:transparent; box-shadow:var(--shadow-sm);
+}
+.btn-primary:hover{filter:brightness(0.98)}
+.btn-link{color:var(--accent); border:none; background:transparent; padding:.45rem .6rem; border-radius:.6rem}
+.btn-link:hover{background:var(--accent-weak)}
+
+/* ▼ ヘッダーのリンク下線を完全に無効化 */
+.nav-right a,
+.nav-right a:link,
+.nav-right a:visited,
+.nav-right a:hover,
+.nav-right a:active,
+.btn,
+.btn:link,
+.btn:visited,
+.btn:hover,
+.btn:active{
+  text-decoration:none;
+}
+
+/* Toolbar */
+.toolbar{display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; margin:.6rem 0 .4rem}
+
+/* Inputs */
+textarea, input[type="text"]{
+  width:100%; font-size:16px; padding:12px 12px;
+  border:1px solid var(--line); border-radius:12px; background:var(--card);
+}
+textarea{min-height:120px; resize:vertical}
+textarea:focus, input[type="text"]:focus{
+  outline:2px solid transparent; box-shadow:0 0 0 2px #93C5FD inset, var(--shadow-sm);
+}
+
+/* Cards */
+.cards{margin-top:14px}
+.card{
+  padding:12px 12px; border:1px solid var(--line); border-radius:12px;
+  background:var(--card); margin-bottom:10px; box-shadow:var(--shadow-sm);
+}
+.head{font-size:.95rem; margin-bottom:6px; display:flex; gap:.5rem; flex-wrap:wrap; align-items:center}
+.head .date{font-weight:600}
+.raw{white-space:pre-wrap; word-break:break-word; font-family:ui-sans-serif; font-size:.95rem}
+.linklike{color:var(--accent); background:transparent; border:none; padding:.2rem .4rem; cursor:pointer}
+
+/* Dropdown (suggest) */
+#taWrap{position:relative}
+.dropdown{
+  position:absolute; left:0; right:0; top:100%; margin-top:6px;
+  background:var(--card); border:1px solid var(--line); border-radius:12px;
+  box-shadow:var(--shadow-md); display:none; overflow:auto; max-height:40vh; z-index:40;
+  padding-bottom:max(8px, env(safe-area-inset-bottom));
+  overscroll-behavior:contain; -webkit-overflow-scrolling:touch; touch-action:pan-y;
+}
+.item{padding:.55rem .7rem; cursor:pointer; font-size:.95rem; display:flex; gap:.5rem; align-items:center}
+.item:hover{background:#F3F4F6}
+.item.is-active{background:#EEF2FF}
+.type{font-size:.7rem; color:#fff; background:#9CA3AF; border-radius:999px; padding:0 .4rem}
+
+/* Settings menu */
+.settings{position:relative}
+.settings-menu{
+  position:absolute; right:0; top:calc(100% + 6px); background:var(--card);
+  border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow-md);
+  display:none; min-width:220px; z-index:50;
+}
+.settings-menu .mi{padding:.55rem .8rem; cursor:pointer; border-bottom:1px solid #F1F5F9}
+.settings-menu .mi:last-child{border-bottom:none}
+.settings-menu .mi:hover{background:#F8FAFC}
+
+/* Tabs (search) */
+.tabs{display:flex; gap:.4rem; border-bottom:1px solid var(--line); padding:0 .2rem}
+.tab{appearance:none; background:transparent; border:none; padding:.65rem .85rem; cursor:pointer; border-bottom:2px solid transparent}
+.tab.is-active{border-color:var(--accent); color:#1F2937; font-weight:600}
+.tabpanel{display:none; padding:.8rem 0}
+.tabpanel.is-active{display:block}
+
+/* Lists */
+.list{display:grid; gap:.5rem}
+.pill{display:inline-flex; align-items:center; gap:.35rem; border:1px solid var(--line); border-radius:999px; padding:.25rem .55rem; font-size:.85rem}
+.muted{color:var(--muted)}
+.small{font-size:.85rem}
+.kbd{font-family:ui-monospace, Menlo, monospace; padding:0 .35rem; border:1px solid var(--line); border-radius:.35rem; background:#F9FAFB}
+
+/* Race suggest */
+.race-suggest{max-height:40vh; overflow:auto; border:1px solid var(--line); border-radius:10px; padding:.3rem; background:var(--card)}
+.race-suggest .row{padding:.45rem .55rem; border-radius:.6rem; cursor:pointer}
+.race-suggest .row:hover{background:#F3F4F6}
+
+/* Player + notes */
+.player-list{display:grid; gap:.4rem}
+.player-item{padding:.45rem .55rem; border:1px solid var(--line); border-radius:10px; cursor:pointer}
+.player-item:hover{background:#F8FAFC}
+.note-list .note{padding:.45rem .55rem; border:1px solid var(--line); border-radius:10px; background:#fff}
+
+/* Dialogs */
+dialog{border:none; border-radius:12px; max-width:860px; width:96%}
+dialog::backdrop{background:rgba(0,0,0,.25)}
+
+/* Footer */
+.footer{color:var(--muted); font-size:.85rem; text-align:center; padding:20px 8px}
+
+/* Highlight */
+.hl{background:var(--hl); font-weight:700}
+
+/* Dark mode (optional) */
+@media (prefers-color-scheme: dark){
   :root{
-    --bg:#fffaf3; --card:#fff; --fg:#111; --muted:#6b7280; --line:#e5e7eb;
-    --blue:#3b82f6; --green:#10b981; --hl:#FEF3C7;
+    --bg:#0B1020; --card:#0F172A; --fg:#E5E7EB; --muted:#9CA3AF; --line:#243045;
+    --accent:#3B82F6; --accent-weak:#0B1B3A; --shadow-sm:none; --shadow-md:none;
   }
-  *{box-sizing:border-box}
-  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;background:var(--bg);color:var(--fg)}
-  header{position:sticky;top:0;background:var(--card);border-bottom:1px solid var(--line);z-index:30}
-  .bar{display:flex;gap:.5rem;align-items:center;padding:.6rem .8rem;flex-wrap:wrap}
-  .title{font-weight:800;margin-right:auto}
-  .wrap{max-width:900px;margin:14px auto;padding:0 12px}
+  .race-suggest, .card{background:var(--card)}
+}
 
-  textarea{width:100%;min-height:120px;font-size:16px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--card)}
-  .toolbar{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin:.4rem 0}
-  .btn{appearance:none;border:1px solid var(--line);background:#fafafa;padding:.55rem .85rem;border-radius:.8rem;cursor:pointer;font-size:.95rem}
-  .btn:active{transform:translateY(1px)}
-  .btn-primary{background:#e8fbf3;border-color:#c9f3e3}
-  .btn-link{color:#2563eb;text-decoration:none;border:1px solid var(--line);background:var(--card);padding:.45rem .7rem;border-radius:.7rem}
-  .btn-link:hover{background:#f8fafc}
+/* --- header layout tweaks --- */
+.status-group{ display:flex; gap:.5rem; margin-left:.75rem; }
+.nav-right{ margin-left:auto; display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
 
-  .cards{margin-top:14px}
-  .card{padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--card);margin-bottom:10px;box-shadow:0 2px 6px rgba(0,0,0,.04)}
-  .head{font-size:.95rem;margin-bottom:6px;display:flex;gap:.5rem;flex-wrap:wrap;align-items:center}
-  .head .date{font-weight:600}
-  .raw{white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.95rem}
-  .linklike{color:#2563eb; background:transparent; border:none; padding:.2rem .4rem; cursor:pointer}
-  .footer{color:#6b7280;font-size:.85rem;text-align:center;padding:20px 8px}
+/* pill-like ghost buttons for header links */
+.btn-pill{ border-radius:999px; padding:.5rem .8rem; }
+.btn-ghost{ background:var(--card); border:1px solid var(--line); color:#374151; }
+.btn-ghost:hover{ background:#F3F4F6; }
 
-  /* ▼ ドロップダウン（テキストエリア直下・固定配置） */
-  .dropdown{
-    position:absolute; left:0; right:0; top:100%; margin-top:6px;
-    background:var(--card); border:1px solid var(--line); border-radius:12px;
-    box-shadow:0 10px 24px rgba(0,0,0,.08); display:none; overflow:auto; max-height:260px; z-index:40;
-    padding-bottom:max(8px, env(safe-area-inset-bottom));
-    overscroll-behavior: contain; -webkit-overflow-scrolling: touch; touch-action: pan-y;
+/* make existing badges a touch more pill-like to match */
+.badge{ border-radius:999px; }
+
+/* ▼ スマホ時：2段目（nav-right）を右寄せで独立行にする */
+@media (max-width: 640px){
+  .bar{ flex-wrap: wrap; }
+  .nav-right{
+    flex:1 1 100%;
+    justify-content:flex-end;
+    margin-left:0;
   }
-  .item{padding:.55rem .7rem;cursor:pointer;font-size:.95rem;display:flex;gap:.5rem;align-items:center}
-  .item:hover{background:#f3f4f6}
-  .item.is-active{ background:#eef2ff; }
-  .type{font-size:.7rem;color:#fff;background:#9ca3af;border-radius:999px;padding:0 .4rem}
-
-  dialog{border:none;border-radius:12px;max-width:760px;width:96%;}
-  dialog::backdrop{background:rgba(0,0,0,.25)}
-  .hl{background:var(--hl);font-weight:700}
-
-  /* ステータスバッジ */
-  .badge{display:inline-flex;align-items:center;gap:.35rem;padding:.2rem .5rem;border:1px solid var(--line);border-radius:999px;font-size:.8rem;background:var(--card)}
-  .ok{color:#10b981} .ng{color:#ef4444}
-
-  /* 設定メニュー */
-  .settings{position:relative}
-  .settings-menu{position:absolute;right:0;top:calc(100% + 6px);background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 24px rgba(0,0,0,.08);display:none;min-width:220px;z-index:50}
-  .settings-menu .mi{padding:.55rem .8rem;cursor:pointer;border-bottom:1px solid #f1f5f9}
-  .settings-menu .mi:last-child{border-bottom:none}
-  .settings-menu .mi:hover{background:#f8fafc}
+  .status-group{ flex-wrap:wrap; }
+}
 </style>
+
 </head>
 <body>
 <header>
   <div class="bar">
-    <div class="title">もふメモ</div>
-    <span id="riderStatus" class="badge">選手DB <span class="mark">…</span></span>
-    <span id="raceStatus" class="badge">レース情報 <span class="mark">…</span></span>
-    <div style="flex:1"></div>
-    <a class="btn-link" href="https://keirinjingle.github.io/keirin-links/howto.html" target="_blank" rel="noopener">使い方</a>
-    <button id="connectGoogleBtn" class="btn">Googleログイン</button>
-    <div class="settings">
-      <button id="settingsBtn" class="btn">設定 ▾</button>
-      <div id="settingsMenu" class="settings-menu">
-        <div id="importMi" class="mi">インポート（NDJSON）</div>
-        <div id="exportMi" class="mi">エクスポート（NDJSON）</div>
-      </div>
+    <div class="title">🐾 もふメモ</div>
+
+    <!-- もふメモの“右隣”にステータス -->
+    <div class="status-group">
+      <span id="riderStatus" class="badge">
+        <span class="dot"></span> 選手DB <span class="mark">…</span>
+      </span>
+      <span id="raceStatus" class="badge">
+        <span class="dot"></span> レース情報 <span class="mark">…</span>
+      </span>
     </div>
-    <a class="btn-link" href="https://keirinjingle.github.io/keirin-links/donation.html" target="_blank" rel="noopener">寄付</a>
-    <button id="openSearch" class="btn" title="Ctrl/Cmd+K でも開けます">検索</button>
+
+    <!-- 右端にボタン風リンク（使い方 / 設定 / 寄付） -->
+    <div class="nav-right">
+      <a class="btn btn-pill btn-ghost" href="https://keirinjingle.github.io/keirin-links/howto.html" target="_blank" rel="noopener">使い方</a>
+
+      <div class="settings">
+        <button id="settingsBtn" class="btn btn-pill btn-ghost">設定 ▾</button>
+        <div id="settingsMenu" class="settings-menu">
+          <div id="loginMi" class="mi">Googleログイン</div>
+          <div id="importMi" class="mi">インポート（NDJSON）</div>
+          <div id="exportMi" class="mi">エクスポート（NDJSON）</div>
+        </div>
+      </div>
+
+      <a class="btn btn-pill btn-ghost" href="https://keirinjingle.github.io/keirin-links/donation.html" target="_blank" rel="noopener">寄付</a>
+    </div>
   </div>
 </header>
+
+
 
 <main class="wrap">
   <div class="toolbar">
     <button id="inlineSlash" class="btn" title="/ を挿入">/</button>
+    <button id="openSearch" class="btn" title="Ctrl/Cmd+K でも開けます">レース検索</button>
     <button id="addBtn" class="btn btn-primary">登録</button>
   </div>
 
@@ -112,14 +270,60 @@
 <dialog id="searchDlg">
   <div style="padding:12px 14px; display:grid; gap:10px;">
     <div style="display:flex;align-items:center;gap:.5rem;justify-content:space-between">
-      <div style="display:flex; gap:.5rem; align-items:center;">
-        <strong>全文検索（素朴）</strong>
-        <input id="searchInput" type="text" placeholder="語句を入力（raw.includes）" style="width:46ch;max-width:68vw;padding:.4rem .6rem;border:1px solid var(--line);border-radius:.6rem">
-      </div>
+      <strong>検索</strong>
       <button id="searchClose" class="btn">閉じる</button>
     </div>
-    <div id="searchCount" style="color:#6b7280"></div>
-    <div id="searchList" style="margin-top:.25rem; max-height:60vh; overflow:auto;"></div>
+
+    <div class="tabs">
+      <button id="tabRace"  class="tab is-active">レース内検索</button>
+      <button id="tabFull"  class="tab">全文検索</button>
+    </div>
+
+    <!-- ▼ レース内検索 -->
+    <div id="panelRace" class="tabpanel is-active">
+      <div class="list">
+        <div style="display:flex; gap:.6rem; align-items:center; flex-wrap:wrap;">
+          <input id="raceSearchInput" type="text" placeholder="例：函館 6R / 立川6R" style="width:32ch;max-width:60vw;padding:.4rem .6rem;border:1px solid var(--line);border-radius:.6rem">
+          <button id="raceSearchClear" class="btn">クリア</button>
+          <span class="muted small">当日の会場とR番号から検索</span>
+        </div>
+        <div id="raceSuggest" class="race-suggest"></div>
+
+        <div id="raceView" class="card" style="display:none">
+          <div class="head">
+            <span class="date" id="raceHead"></span>
+            <a id="raceEntryLink" class="btn-link" href="#" target="_blank" rel="noopener">出走表</a>
+            <a id="raceResultLink" class="btn-link" href="#" target="_blank" rel="noopener" style="display:none">結果</a>
+          </div>
+          <div class="player-list" id="playerList"></div>
+        </div>
+
+        <div id="playerNotesWrap" class="card" style="display:none">
+          <div class="head"><strong id="playerNotesHead">@選手 の過去メモ</strong></div>
+          <div id="playerNotes" class="note-list"></div>
+        </div>
+
+        <div id="newMemoWrap" class="card" style="display:none">
+          <div class="head"><strong>メモを追加</strong></div>
+          <textarea id="newMemoTa" placeholder="- 函館6R … @選手名"></textarea>
+          <div style="display:flex; gap:.5rem; margin-top:.5rem;">
+            <button id="saveMemoBtn" class="btn btn-primary">登録</button>
+            <button id="cancelMemoBtn" class="btn">キャンセル</button>
+          </div>
+          <div id="newMemoTip" class="muted small" style="margin-top:.25rem">※ 登録すると一覧に即反映されます</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ▼ 全文検索 -->
+    <div id="panelFull" class="tabpanel">
+      <div style="display:flex; gap:.6rem; align-items:center; flex-wrap:wrap;">
+        <input id="searchInput" type="text" placeholder="語句を入力（raw.includes）" style="width:46ch;max-width:68vw;padding:.4rem .6rem;border:1px solid var(--line);border-radius:.6rem">
+        <span class="muted small">ヒント：<span class="kbd">@名前</span> や <span class="kbd">+タグ</span> でも検索できます</span>
+      </div>
+      <div id="searchCount" style="color:#6b7280;margin-top:.4rem"></div>
+      <div id="searchList" style="margin-top:.25rem; max-height:60vh; overflow:auto;"></div>
+    </div>
   </div>
 </dialog>
 
@@ -138,643 +342,6 @@
     </div>
   </form>
 </dialog>
-
-<script>
-/* ========== meta / config ========== */
-const CLIENT_ID = (document.querySelector('meta[name="mofu:google-client-id"]')?.content||'').trim();
-const ALLOWED_ORIGINS = (document.querySelector('meta[name="mofu:allowed-origins"]')?.content||'')
-  .split(',').map(s=>s.trim()).filter(Boolean);
-const ORIGIN_ALLOWED = !ALLOWED_ORIGINS.length || ALLOWED_ORIGINS.includes(location.origin);
-
-/* ========== 基本状態 & 定数 ========== */
-const ta = document.getElementById('ta');
-const dropdown = document.getElementById('dropdown');
-const riderStatus = document.getElementById('riderStatus');
-const raceStatus  = document.getElementById('raceStatus');
-
-const KEY_ENTRIES = 'mofu:entries:mvp2'; // ← ここが変わると旧データは見えません
-let MEM_ENTRIES = null;                  // メモリキャッシュ
-let STORAGE_OK = true;                   // localStorage が使えるか
-let composing=false, imeJustEnded=false, ddSel=-1, curItems=[], lastCaret=0;
-const IME_SUPPRESS_MS=200;
-
-// サジェストの上限
-const MAX_TOTAL_ITEMS = 30;  // 全体上限（スクロール可）
-const MAX_RACE_ITEMS  = 20;  // レース上限（12R想定で十分）
-
-function setStatus(el, ok, msg){
-  const mark = el.querySelector('.mark');
-  mark.textContent = ok ? '✅' : `✖${msg?`(${msg})`:''}`;
-  el.classList.toggle('ok', !!ok);
-  el.classList.toggle('ng', !ok);
-}
-
-/* ========== 外部データ（選手DB・当日レース） ========== */
-const RIDERS_URL = 'https://keirinjingle.github.io/keirin-links/senshuID.json';
-const RACES_URL  = (ymd) => `https://keirinjingle.github.io/date/keirin_race_list_${ymd}.json`;
-
-let RIDERS = [];   // {id,name,region,ki,grade,profile}
-let DAYCARDS = []; // [{venue, races:[{race_number, url, ...}]}]
-
-// JST日付
-const ymdJST = () => { const d = new Date(); const tz = d.getTimezoneOffset()*60000; return new Date(d.getTime()-tz).toISOString().slice(0,10).replace(/-/g,''); };
-const ymd_dash = () => { const d = new Date(); const tz = d.getTimezoneOffset()*60000; return new Date(d.getTime()-tz).toISOString().slice(0,10); };
-
-/* ========== localStorage 健全性チェック ========== */
-(function storageHealthCheck(){
-  try{
-    const k = KEY_ENTRIES + ':healthcheck';
-    localStorage.setItem(k, '1');
-    localStorage.removeItem(k);
-    STORAGE_OK = true;
-  }catch(e){
-    console.warn('localStorage が使えません（メモリのみで継続）:', e);
-    STORAGE_OK = false;
-  }
-})();
-
-/* ========== 永続 I/O（堅牢版） ========== */
-const loadEntries = () => {
-  if (MEM_ENTRIES) return MEM_ENTRIES;
-  try {
-    if (!STORAGE_OK) { MEM_ENTRIES = []; return MEM_ENTRIES; }
-    const raw = localStorage.getItem(KEY_ENTRIES);
-    if (!raw) { MEM_ENTRIES = []; return MEM_ENTRIES; }
-    const parsed = JSON.parse(raw);
-    MEM_ENTRIES = Array.isArray(parsed) ? parsed : [];
-    return MEM_ENTRIES;
-  } catch (e) {
-    console.warn('保存データが壊れているため初期化します（バックアップを :corrupt に退避）。', e);
-    try { if (STORAGE_OK) localStorage.setItem(KEY_ENTRIES + ':corrupt', localStorage.getItem(KEY_ENTRIES) || ''); } catch {}
-    MEM_ENTRIES = [];
-    if (STORAGE_OK) localStorage.setItem(KEY_ENTRIES, '[]');
-    return MEM_ENTRIES;
-  }
-};
-
-const saveEntries = (arr) => {
-  MEM_ENTRIES = Array.isArray(arr) ? arr : [];
-  if (!STORAGE_OK) return false;
-  try{
-    localStorage.setItem(KEY_ENTRIES, JSON.stringify(MEM_ENTRIES));
-    return true;
-  }catch(e){
-    console.warn('localStorage 保存に失敗（メモリのみ）:', e);
-    return false;
-  }
-};
-
-/* ========== 選手・レース取得 ========== */
-function extractKi(kiText){ const m=(kiText||'').match(/(\d+)期/); return m ? `${m[1]}期` : (kiText||''); }
-
-async function fetchRiders(){
-  try{
-    const res = await fetch(RIDERS_URL, { cache:'no-cache' });
-    if(!res.ok) throw new Error(`HTTP ${res.status}`);
-    const raw = await res.text();
-    let arr; try{ arr = JSON.parse(raw); } catch{ throw new Error('JSON parse error'); }
-    RIDERS = arr.map(r=>({
-      id: String(r['登録番号']||'').trim(),
-      name: r['選手名'],
-      ki: extractKi(r['期']),
-      region: r['地域']||'',
-      grade: r['級']||'',
-      profile: (r['プロフィールURL']||'').replace('https://keirin.netkeiba.comhttps://','https://')
-    }));
-    setStatus(riderStatus, true);
-  }catch(e){
-    console.warn('選手DB取得失敗:', e);
-    RIDERS = [];
-    setStatus(riderStatus, false, e.message||'fetch error');
-  }
-}
-
-async function fetchRaces(){
-  try{
-    const url = RACES_URL(ymdJST());
-    const res = await fetch(url, { cache:'no-cache' });
-    if(!res.ok) throw new Error(`HTTP ${res.status}`);
-    const raw = await res.text();
-    let data; try{ data = JSON.parse(raw); } catch{ throw new Error('JSON parse error'); }
-    DAYCARDS = Array.isArray(data) ? data : [];
-    setStatus(raceStatus, true);
-  }catch(e){
-    console.warn('当日レース取得失敗:', e);
-    DAYCARDS = [];
-    setStatus(raceStatus, false, e.message||'fetch error');
-  }
-}
-
-/* ========== サジェスト（戦法・選手・レース・タグ） ========== */
-const TACTICS = ['三分戦','二分戦','単騎','先行一車','まくり','差し','カマシ','自在'];
-
-function getSlashToken(text, caret){
-  const m = text.slice(0, caret).match(/(^|\s)\/(\S*)$/);
-  if (!m) return null;
-  return { token:m[2], start:caret - m[2].length - 1, end: caret };
-}
-function norm(s){ return (s||'').toLowerCase(); }
-
-function findCandidates(q){
-  const items=[];
-  const n = norm(q||'');
-  const wantFallback = !q || !q.trim();
-  const hasDigit = /[0-9０-９]/.test(q||'');
-
-  // 0) 戦法
-  const ts = q ? TACTICS.filter(t=>norm(t).includes(n)) : TACTICS;
-  items.push(...ts.map(t=>({type:'tactic', t})));
-
-  // 1) 選手
-  if (RIDERS.length && q){
-    const list = RIDERS
-      .filter(r => (`${r.name} ${r.region} ${r.ki}`).toLowerCase().includes(n))
-      .slice(0, 6);
-    items.push(...list.map(r => ({ type:'riderDb', r })));
-  } else if (q){
-    items.push({type:'rider', name:q});
-  }
-
-  // 2) レース（当日）
-  if (DAYCARDS.length && (wantFallback || hasDigit || (q && DAYCARDS.some(v=> norm(v.venue).includes(n) || n.includes(norm(v.venue)))))){
-    const lower = n;
-    let pushed = 0;
-    outer: for (const v of DAYCARDS){
-      const matchVenue = !q || norm(v.venue).includes(lower) || lower.includes(norm(v.venue));
-      if (!matchVenue && !hasDigit) continue;
-      for (const rr of v.races){
-        let pass=true;
-        if (hasDigit){
-          const m = lower.match(/(\d{1,2})$/);
-          if (m){ const no=parseInt(m[1],10); pass = (rr.race_number===no); }
-        }
-        if (pass){
-          items.push({ type:'race', v, r: rr });
-          pushed++;
-          if (pushed>=MAX_RACE_ITEMS) break outer;
-        }
-      }
-    }
-  }
-
-  // 3) タグ
-  if (q) items.push({type:'tag', tag:q});
-
-  return items.slice(0, MAX_TOTAL_ITEMS);
-}
-
-function renderDropdown(items){
-  if (!items.length){ dropdown.style.display='none'; ddSel=-1; return; }
-  dropdown.innerHTML = items.map((it,i)=>{
-    if (it.type==='tactic') return `<div class="item" data-i="${i}"><span class="type">戦法</span> #${it.t}</div>`;
-    if (it.type==='riderDb'){
-      const r=it.r; const right = r.region ? `${r.region}／${r.ki}` : r.ki;
-      return `<div class="item" data-i="${i}"><span class="type">選手</span> @${r.name}（${right}）</div>`;
-    }
-    if (it.type==='race'){
-      return `<div class="item" data-i="${i}"><span class="type">レース</span> - ${it.v.venue}${it.r.race_number}R</div>`;
-    }
-    if (it.type==='rider')  return `<div class="item" data-i="${i}"><span class="type">選手</span> @${it.name}</div>`;
-    return `<div class="item" data-i="${i}"><span class="type">タグ</span> +${it.tag}</div>`;
-  }).join('');
-  dropdown.style.display='block';
-  ddSel=0; highlightSelection();
-  dropdown.scrollTop=0;
-}
-
-/* ========== ドロップダウン操作（IME安全・固定配置） ========== */
-function highlightSelection(){
-  const nodes=dropdown.querySelectorAll('.item');
-  nodes.forEach((n,i)=>n.classList.toggle('is-active', i===ddSel));
-  const active=nodes[ddSel];
-  if(active){
-    const r=active.getBoundingClientRect(), pr=dropdown.getBoundingClientRect();
-    if(r.top<pr.top || r.bottom>pr.bottom) active.scrollIntoView({block:'nearest'});
-  }
-}
-function moveSelection(delta){
-  const n=dropdown.querySelectorAll('.item').length; if(!n) return;
-  if(ddSel<0) ddSel=0; ddSel=(ddSel+delta+n)%n; highlightSelection();
-}
-function commitDropdown(idx){
-  const tok=getSlashToken(ta.value, lastCaret);
-  if(!tok){ dropdown.style.display='none'; ddSel=-1; return; }
-  const it=curItems[idx];
-  if(!it){ dropdown.style.display='none'; ddSel=-1; return; }
-
-  let insert='';
-  if(it.type==='tactic') insert = '#'+it.t;
-  else if(it.type==='riderDb') insert = '@'+it.r.name;
-  else if(it.type==='race') insert = `- ${it.v.venue}${it.r.race_number}R`;
-  else if(it.type==='rider') insert = '@'+it.name;
-  else insert = '+'+it.tag;
-
-  const before=ta.value.slice(0,tok.start);
-  const after=ta.value.slice(tok.end);
-
-  const needsLeadingSpace = before && !/\s$/.test(before);
-  const needsTrailingSpace = after && !/^\s/.test(after);
-
-  const piece = (needsLeadingSpace?' ':'') + insert + (needsTrailingSpace?' ':'');
-  ta.value = before + piece + after;
-
-  const newPos = (before + piece).length;
-  ta.setSelectionRange(newPos,newPos);
-  lastCaret=newPos;
-
-  dropdown.style.display='none'; ddSel=-1;
-  ta.focus();
-}
-
-/* ========== 入力ハンドラ（IME完全ガード） ========== */
-ta.addEventListener('compositionstart', ()=>{ composing=true; });
-ta.addEventListener('compositionend', ()=>{
-  composing=false;
-  lastCaret=ta.selectionStart;
-  updateDropdown();
-  imeJustEnded=true;
-  setTimeout(()=> imeJustEnded=false, IME_SUPPRESS_MS);
-});
-ta.addEventListener('input', ()=>{ lastCaret=ta.selectionStart; updateDropdown(); });
-ta.addEventListener('keyup', (e)=>{ lastCaret=ta.selectionStart; if(e.key==='/' && !composing) updateDropdown(); });
-ta.addEventListener('click', ()=>{ lastCaret=ta.selectionStart; });
-document.addEventListener('selectionchange', ()=>{ if(document.activeElement===ta){ lastCaret=ta.selectionStart; }});
-
-ta.addEventListener('keydown', (e)=>{
-  if (e.isComposing) return;
-  lastCaret = ta.selectionStart;
-  if (dropdown.style.display!=='block') return;
-  const tok = getSlashToken(ta.value, lastCaret);
-  if (!tok) return;
-
-  if(e.key==='ArrowDown'){ e.preventDefault(); moveSelection(1); }
-  else if(e.key==='ArrowUp'){ e.preventDefault(); moveSelection(-1); }
-  else if(e.key==='Enter' || e.key==='Tab'){
-    if (imeJustEnded) return;
-    e.preventDefault();
-    if (ddSel>=0) commitDropdown(ddSel);
-  }else if(e.key==='Escape'){ e.preventDefault(); dropdown.style.display='none'; ddSel=-1; }
-});
-
-/* モバイル：スクロールとタップの誤確定抑止 */
-let tapState=null; const TAP_MOVE_TOL=6;
-dropdown.addEventListener('pointerdown', (e)=>{
-  const node=e.target.closest('.item'); if(!node){ tapState=null; return; }
-  tapState={ idx:parseInt(node.dataset.i,10), x:e.clientX, y:e.clientY, dragged:false };
-});
-dropdown.addEventListener('pointermove', (e)=>{
-  if(!tapState) return;
-  if(Math.abs(e.clientX-tapState.x)>TAP_MOVE_TOL || Math.abs(e.clientY-tapState.y)>TAP_MOVE_TOL) tapState.dragged=true;
-});
-dropdown.addEventListener('scroll', ()=>{ if(tapState) tapState.dragged=true; });
-dropdown.addEventListener('pointerup', (e)=>{
-  if(!tapState) return;
-  const node=e.target.closest('.item'); const idx=node?parseInt(node.dataset.i,10):tapState.idx;
-  const dragged=tapState.dragged; tapState=null;
-  if(!dragged){ e.preventDefault(); e.stopPropagation(); commitDropdown(idx); }
-});
-dropdown.addEventListener('pointercancel', ()=>{ tapState=null; });
-
-/* スラッシュ挿入 */
-document.getElementById('inlineSlash').addEventListener('click', ()=>{
-  ta.focus(); const st=ta.selectionStart; ta.setRangeText('/', st, st, 'end');
-  lastCaret=ta.selectionStart; updateDropdown();
-});
-
-/* ========== CRUD（メモリ→UI→保存） ========== */
-function addEntry(raw){
-  const entry={ id: Date.now().toString(36)+Math.random().toString(16).slice(2), at:new Date().toISOString(), raw };
-  const arr = loadEntries().slice();
-  arr.push(entry);
-  const ok = saveEntries(arr);
-  renderList(arr); // 保存失敗でも画面は反映
-  scheduleDriveSave();
-  if (!ok) alert('注意：この環境では保存が制限されている可能性があります（プライベートモード等）。');
-}
-function updateEntry(id, newRaw){
-  const arr = loadEntries().slice();
-  const i = arr.findIndex(e=>e.id===id); if(i<0) return;
-  arr[i] = { ...arr[i], raw:newRaw, at:new Date().toISOString() };
-  const ok = saveEntries(arr);
-  renderList(arr);
-  scheduleDriveSave();
-  if (!ok) alert('注意：この環境では保存が制限されています。');
-}
-function deleteEntry(id){
-  const arr = loadEntries().filter(e=>e.id!==id);
-  const ok = saveEntries(arr);
-  renderList(arr);
-  scheduleDriveSave();
-  if (!ok) alert('注意：この環境では保存が制限されています。');
-}
-
-document.getElementById('addBtn').addEventListener('click', ()=>{
-  const raw=ta.value.trim(); if(!raw){ alert('テキストが空です'); return; }
-  addEntry(raw); ta.value=''; dropdown.style.display='none';
-});
-
-/* ========== 出走表・結果リンクの自動差し込み ========== */
-function parseRaceFromRaw(raw){
-  const m = (raw||'').match(/-\s*([\u3040-\u30ff\u4e00-\u9fafA-Za-z]+)(\d{1,2})R/);
-  if(!m) return null;
-  const venue = m[1]; const raceNo = parseInt(m[2],10);
-  const v = (DAYCARDS||[]).find(x=>x.venue===venue);
-  if(!v) return { venue, raceNo, entry:null, result:null, date: ymd_dash() };
-  const rr = (v.races||[]).find(x=>x.race_number===raceNo);
-  if(!rr || !rr.url) return { venue, raceNo, entry:null, result:null, date: ymd_dash() };
-  const entry = rr.url;
-  const result = rr.url.includes('/entry/') ? rr.url.replace('/entry/','/result/') : null;
-  return { venue, raceNo, entry, result, date: ymd_dash() };
-}
-
-/* ========== 表示 ========== */
-function linkifyRaw(html){
-  html=html.replace(/@([^\s@#\+（）()]+)/g,(m,n)=>`<a href="#" class="riderLink" data-q="@${n}">@${n}</a>`);
-  html=html.replace(/\+("[^"]+"|[\w\u3040-\u30ff\u4e00-\u9faf]+)/g,(m)=>`<a href="#" class="tagLink" data-q="${m}">${m}</a>`);
-  return html;
-}
-function renderList(listOverride){
-  const el=document.getElementById('cards');
-  const list=(listOverride ?? loadEntries()).slice().reverse();
-  el.innerHTML=list.map(e=>{
-    const headLeft=(e.at||'').slice(0,10);
-    const race=parseRaceFromRaw(e.raw||'');
-    const links = race && (race.entry||race.result) ? `
-      <a href="${race.entry||'#'}" ${race.entry?'target="_blank" rel="noopener"':''}>[出走表]</a>
-      ${race.result?`<a href="${race.result}" target="_blank" rel="noopener">[結果]</a>`:''}
-    ` : '';
-    const raw=linkifyRaw((e.raw||'').replace(/</g,'&lt;'));
-    const actions=`<div style="margin-left:auto;display:flex;gap:.4rem">
-      <button class="linklike editBtn" data-id="${e.id}">編集</button>
-      <button class="linklike delBtn" data-id="${e.id}">削除</button></div>`;
-    return `<div class="card" id="card_${e.id}">
-      <div class="head"><span class="date">${race?`${race.date} ${race.venue}${race.raceNo}R`:headLeft}</span> ${links} ${actions}</div>
-      <div class="raw">${raw}</div></div>`;
-  }).join('') || '<div class="card" style="color:#9ca3af">（まだメモがありません）</div>';
-}
-renderList(loadEntries());
-
-/* 編集・削除・リンクで検索 */
-document.body.addEventListener('click', (e)=>{
-  const editBtn=e.target.closest('.editBtn'); const delBtn=e.target.closest('.delBtn');
-  const r=e.target.closest('a.riderLink'); const t=e.target.closest('a.tagLink');
-
-  if(editBtn){
-    const id=editBtn.dataset.id;
-    const entry=loadEntries().find(x=>x.id===id); if(!entry) return;
-    const newRaw=prompt('メモを編集', entry.raw||''); if(newRaw==null) return;
-    updateEntry(id, newRaw);
-    return;
-  }
-  if(delBtn){
-    const id=delBtn.dataset.id; if(confirm('このメモを削除しますか？')) deleteEntry(id); return;
-  }
-  if(r){ e.preventDefault(); openSearch(r.dataset.q); }
-  if(t){ e.preventDefault(); openSearch(t.dataset.q); }
-});
-
-/* ========== 検索 ========== */
-const searchDlg=document.getElementById('searchDlg');
-const searchInput=document.getElementById('searchInput');
-document.getElementById('openSearch').addEventListener('click', ()=>openSearch(''));
-document.addEventListener('keydown', (e)=>{ if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='k'){ e.preventDefault(); openSearch(''); }});
-
-function openSearch(prefill){
-  searchInput.value=prefill||'';
-  document.getElementById('searchList').innerHTML='';
-  document.getElementById('searchCount').textContent='';
-  searchDlg.showModal(); searchInput.focus();
-  runSearch();
-}
-document.getElementById('searchClose').addEventListener('click', ()=> searchDlg.close());
-let searchTimer=null;
-searchInput.addEventListener('input', ()=>{ clearTimeout(searchTimer); searchTimer=setTimeout(runSearch,200); });
-
-function makeHiliter(words){
-  const sorted=[...words].sort((a,b)=>b.length-a.length);
-  const res=sorted.map(w=>w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
-  if(!res.length) return s=>s; const re=new RegExp('('+res.join('|')+')','gi');
-  return s=>s.replace(re,'<span class="hl">$1</span>');
-}
-function snippet(raw, query){
-  if(!query.length) return raw.slice(0,120);
-  const q=query[0]; const idx=raw.toLowerCase().indexOf(q.toLowerCase());
-  const i=idx>=0?idx:0; const start=Math.max(0,i-40), end=Math.min(raw.length,i+80);
-  return (start>0?'…':'')+raw.slice(start,end)+(end<raw.length?'…':'');
-}
-function runSearch(){
-  const q=(searchInput.value||'').trim();
-  const all=loadEntries();
-  const hits = q ? all.filter(e => (e.raw||'').includes(q)) : all.slice();
-  hits.sort((a,b)=>(b.at||'').localeCompare(a.at||''));
-  const words = q ? [q] : [];
-  const hi = makeHiliter(words);
-
-  const html=hits.slice(0,200).map(e=>{
-    const race=parseRaceFromRaw(e.raw||'');
-    const headLeft=race?`${race.date} ${race.venue}${race.raceNo}R`:(e.at||'').slice(0,10);
-    const snip=snippet(e.raw, words).replace(/</g,'&lt;');
-    return `<div class="card result-item">
-      <div class="head"><span class="date">${headLeft}</span>
-        <button class="linklike openCardBtn" data-id="${e.id}">表示</button></div>
-      <div class="raw">${hi(snip)}</div>
-    </div>`;
-  }).join('') || '<div class="card" style="color:#9ca3af">（該当なし）</div>';
-
-  document.getElementById('searchList').innerHTML=html;
-  document.getElementById('searchCount').textContent=`${hits.length} 件`;
-
-  document.getElementById('searchList').onclick = (e)=>{
-    const btn=e.target.closest('.openCardBtn'); if(!btn) return;
-    const id=btn.dataset.id; searchDlg.close();
-    const node=document.getElementById('card_'+id);
-    if(node){ node.scrollIntoView({behavior:'smooth', block:'center'}); }
-  };
-}
-
-/* ========== 設定（インポート／エクスポートのみ） ========== */
-const settingsBtn=document.getElementById('settingsBtn');
-const settingsMenu=document.getElementById('settingsMenu');
-settingsBtn.addEventListener('click', ()=>{ settingsMenu.style.display = (settingsMenu.style.display==='block') ? 'none' : 'block'; });
-document.addEventListener('click', (e)=>{ if(!settingsMenu.contains(e.target) && e.target!==settingsBtn){ settingsMenu.style.display='none'; }});
-
-document.getElementById('importMi').addEventListener('click', ()=>{
-  settingsMenu.style.display='none';
-  const inp=Object.assign(document.createElement('input'),{type:'file',accept:'.ndjson,.jsonl'});
-  inp.onchange=async ()=>{
-    const text=await inp.files[0].text(); const lines=text.split(/\r?\n/).filter(Boolean);
-    const got=[]; let bad=0; for(const l of lines){ try{got.push(JSON.parse(l));}catch{bad++;} }
-    const cur=loadEntries(); const seen=new Set(cur.map(x=>x.id));
-    for(const e of got){ if(e && !seen.has(e.id)){ cur.push(e); seen.add(e.id); } }
-    const ok = saveEntries(cur);
-    renderList(cur);
-    alert(`インポート完了（新規 ${got.length-bad} 件／壊れ行 ${bad} 件）`);
-    scheduleDriveSave();
-    if(!ok) alert('注意：この環境では保存が制限されています。');
-  };
-  inp.click();
-});
-document.getElementById('exportMi').addEventListener('click', ()=>{
-  settingsMenu.style.display='none';
-  const nd=loadEntries().map(x=>JSON.stringify(x)).join('\n');
-  const blob=new Blob([nd],{type:'application/x-ndjson'});
-  const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(blob), download:`mofu_${ymdJST()}.ndjson`});
-  a.click(); URL.revokeObjectURL(a.href);
-});
-
-/* ========== Google Drive 同期（初回は向きを確認） ========== */
-const DRIVE_FILENAME='mofu_entries.ndjson';
-let tokenClient=null, accessToken=null, driveFileId=null;
-let didInitialDriveSync=false;
-const SCOPE='https://www.googleapis.com/auth/drive.appdata';
-const SYNC_DEBOUNCE_MS=1200;
-let syncTimer=null;
-
-function authHeaders(){ if(!accessToken) throw new Error('no access token'); return { 'Authorization': `Bearer ${accessToken}` }; }
-async function waitForGis(){ for(let i=0;i<50;i++){ if(window.google?.accounts?.oauth2) return; await new Promise(r=>setTimeout(r,100)); } throw new Error('GIS load fail'); }
-
-async function driveFindFileIdByName(name=DRIVE_FILENAME){
-  const params=new URLSearchParams({spaces:'appDataFolder', q:`name='${name.replace(/'/g,"\\'")}' and trashed=false`, fields:'files(id,name)', pageSize:'1'});
-  const res=await fetch(`https://www.googleapis.com/drive/v3/files?${params}`, {headers:authHeaders()});
-  if(!res.ok) throw new Error(`Drive list failed ${res.status}`); const j=await res.json();
-  return j.files?.[0]?.id||null;
-}
-async function driveDownloadFile(fileId){
-  const res=await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {headers:authHeaders()});
-  if(!res.ok) throw new Error(`Drive download failed ${res.status}`); return await res.text();
-}
-async function driveCreateFile(name, content){
-  const meta={name, parents:['appDataFolder']}; const boundary='mofu_'+Math.random().toString(16).slice(2);
-  const body=`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n--${boundary}\r\nContent-Type: application/x-ndjson\r\n\r\n${content}\r\n--${boundary}--`;
-  const res=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',{method:'POST', headers:{...authHeaders(),'Content-Type':`multipart/related; boundary=${boundary}`}, body});
-  if(!res.ok) throw new Error(`Drive create failed ${res.status}`); const j=await res.json(); return j.id;
-}
-async function driveUpdateFile(fileId, content){
-  const res=await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {method:'PATCH', headers:{...authHeaders(),'Content-Type':'application/x-ndjson'}, body:content});
-  if(!res.ok) throw new Error(`Drive update failed ${res.status}`);
-}
-
-function entriesToNdjson(arr){ return arr.map(x=>JSON.stringify(x)).join('\n'); }
-function ndjsonToEntries(text){ if(!text) return []; return text.split(/\r?\n/).filter(Boolean).map(l=>JSON.parse(l)); }
-function arrayLatestAt(arr){ return arr.reduce((m,e)=> Math.max(m, Date.parse(e.at||0)||0 ), 0); }
-
-async function ensureGisReady(){
-  try{ await waitForGis(); }catch{ alert('Googleのライブラリが読み込めませんでした。'); return false; }
-  if(!CLIENT_ID || !CLIENT_ID.endsWith('.apps.googleusercontent.com')){ alert('GoogleクライアントIDが未設定か不正です。'); return false; }
-  if(!ORIGIN_ALLOWED){ alert('このオリジンではDrive連携を無効化しています。'); return false; }
-  if(!tokenClient){
-    tokenClient=google.accounts.oauth2.initTokenClient({
-      client_id:CLIENT_ID, scope:SCOPE, callback: async (resp)=>{
-        if(resp.error){ console.error(resp); alert('Google接続に失敗しました'); return; }
-        accessToken=resp.access_token;
-        if(!didInitialDriveSync){ didInitialDriveSync=true; await runInitialSyncFlow(); }
-      }
-    });
-  }
-  return true;
-}
-
-async function refreshAccessTokenSilent(){
-  return new Promise(async (resolve,reject)=>{
-    try{
-      await waitForGis();
-      if(!tokenClient){
-        tokenClient=google.accounts.oauth2.initTokenClient({ client_id:CLIENT_ID, scope:SCOPE,
-          callback:(resp)=>{ if(resp.error) reject(resp); else { accessToken=resp.access_token; resolve(resp); } }
-        });
-      }
-      tokenClient.requestAccessToken({prompt:'none'});
-    }catch(err){ reject(err); }
-  });
-}
-
-async function runInitialSyncFlow(){
-  try{
-    driveFileId = await driveFindFileIdByName();
-    let serverEntries=[], serverNd='';
-    if(driveFileId){
-      serverNd = await driveDownloadFile(driveFileId);
-      try{ serverEntries = ndjsonToEntries(serverNd); }catch{ serverEntries=[]; }
-    }
-    const local = loadEntries();
-    const localCount = local.length, serverCount=serverEntries.length;
-    const localLatest = arrayLatestAt(local), serverLatest = arrayLatestAt(serverEntries);
-    const fmt = (ts)=> ts? new Date(ts).toISOString().slice(0,19).replace('T',' ') : '—';
-    const msgHtml = `
-      <div>ローカル：<strong>${localCount}</strong> 件（最終 ${fmt(localLatest)}）</div>
-      <div>サーバー：<strong>${serverCount}</strong> 件（最終 ${fmt(serverLatest)}）</div>
-      <div style="margin-top:6px;color:#6b7280">どちらを<strong>正</strong>として反映しますか？</div>
-    `;
-    const syncDlg=document.getElementById('syncDlg');
-    document.getElementById('syncSummary').innerHTML=msgHtml;
-    const choice=await new Promise((resolve)=>{
-      function h(){ syncDlg.removeEventListener('close', h); resolve(syncDlg.returnValue); }
-      syncDlg.addEventListener('close', h); syncDlg.showModal();
-    });
-
-    if(choice==='localToServer'){
-      const nd=entriesToNdjson(local);
-      if(!driveFileId){ driveFileId = await driveCreateFile(DRIVE_FILENAME, nd); }
-      else{ await driveUpdateFile(driveFileId, nd); }
-      alert('サーバーへ上書きしました。以後は自動同期します。');
-    }else if(choice==='serverToLocal'){
-      localStorage.setItem(KEY_ENTRIES, JSON.stringify(serverEntries));
-      MEM_ENTRIES = serverEntries;
-      renderList(serverEntries);
-      alert('ローカルへ上書きしました。以後は自動同期します。');
-    }else{
-      alert('同期設定をキャンセルしました。（いつでも「Googleログイン」から再設定できます）');
-    }
-  }catch(e){
-    console.error(e);
-    alert('同期初期設定に失敗しました。再度お試しください。');
-  }
-}
-
-function scheduleDriveSave(){
-  if(!accessToken) return;
-  clearTimeout(syncTimer);
-  syncTimer=setTimeout(async ()=>{
-    try{
-      const nd=entriesToNdjson(loadEntries());
-      if(!driveFileId){ driveFileId=await driveFindFileIdByName(); if(!driveFileId) driveFileId=await driveCreateFile(DRIVE_FILENAME, nd); else await driveUpdateFile(driveFileId, nd); }
-      else{ await driveUpdateFile(driveFileId, nd); }
-    }catch(e){
-      const msg=String(e||'');
-      if(msg.includes('401')||msg.includes('403')){
-        try{
-          await refreshAccessTokenSilent();
-          const nd=entriesToNdjson(loadEntries());
-          if(!driveFileId){ driveFileId=await driveFindFileIdByName(); if(!driveFileId) driveFileId=await driveCreateFile(DRIVE_FILENAME, nd); else await driveUpdateFile(driveFileId, nd); }
-          else{ await driveUpdateFile(driveFileId, nd); }
-        }catch(e2){ console.warn('Drive保存失敗（再試行も失敗）:', e2); }
-      }else{ console.warn('Drive保存失敗:', e); }
-    }
-  }, SYNC_DEBOUNCE_MS);
-}
-
-document.getElementById('connectGoogleBtn').addEventListener('click', async ()=>{
-  if(!await ensureGisReady()) return;
-  tokenClient.requestAccessToken({prompt:'consent'});
-});
-
-/* ========== 初期化 ========== */
-(async () => {
-  setStatus(riderStatus, false, '…');
-  setStatus(raceStatus,  false, '…');
-  renderList(loadEntries());
-  await Promise.allSettled([ fetchRiders(), fetchRaces() ]);
-  lastCaret = ta.selectionStart;
-  updateDropdown();
-})();
-
-/* ========== サジェスト更新トリガ ========== */
-function updateDropdown(){
-  const tok=getSlashToken(ta.value, lastCaret);
-  if (!tok){ dropdown.style.display='none'; return; }
-  curItems=findCandidates(tok.token);
-  renderDropdown(curItems);
-}
-</script>
+  <script defer src="dist/app.min.js"></script>
 </body>
 </html>
