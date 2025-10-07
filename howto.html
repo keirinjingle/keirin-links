@@ -1,197 +1,251 @@
 <!doctype html>
 <html lang="ja">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>もふメモ | How To</title>
-  <meta name="description" content="もふメモの使い方（How To）。基本操作、補完、同期、寄付、FAQ。" />
-  <style>
-    :root{
-      --bg:#0b0c0f;        /* dark bg */
-      --card:#12141a;      /* dark card */
-      --ink:#e6e8ee;       /* text */
-      --muted:#a9b0bf;     /* subtext */
-      --accent:#ffd85e;    /* brand yellow */
-      --accent-ink:#3a2f00;
-      --border:#1e2230;
-      --ok:#28c76f;
-      --warn:#ff9f43;
-    }
-    @media (prefers-color-scheme: light){
-      :root{
-        --bg:#fafafc;
-        --card:#ffffff;
-        --ink:#1c2333;
-        --muted:#5a6478;
-        --border:#e6e8ef;
-        --accent:#ffd85e;
-        --accent-ink:#3a2f00;
-      }
-    }
-    *{box-sizing:border-box}
-    html,body{height:100%}
-    body{
-      margin:0; background:var(--bg); color:var(--ink);
-      font:16px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
-    }
-    a{color:inherit}
-    .container{max-width:960px;margin:0 auto;padding:24px}
-    header{
-      position:sticky; top:0; z-index:10; backdrop-filter:saturate(180%) blur(8px);
-      background:color-mix(in oklab, var(--bg) 85%, transparent);
-      border-bottom:1px solid var(--border);
-    }
-    .nav{
-      display:flex; align-items:center; gap:10px; padding:12px 16px; max-width:1024px; margin:0 auto;
-    }
-    .brand{font-weight:800; letter-spacing:.02em;}
-    .spacer{flex:1}
-    .btn{
-      appearance:none; border:1px solid var(--border); background:var(--card); color:var(--ink);
-      padding:10px 14px; border-radius:12px; cursor:pointer; text-decoration:none; font-weight:600; display:inline-flex; align-items:center; gap:.5em;
-    }
-    .btn:hover{border-color:color-mix(in oklab, var(--border), var(--ink) 20%)}
-    .btn-accent{background:var(--accent); color:var(--accent-ink); border-color:transparent}
-    .btn-accent:hover{filter:brightness(0.98)}
-    main{padding:16px}
-    .hero{background:var(--card); border:1px solid var(--border); border-radius:16px; padding:20px; display:flex; gap:20px; align-items:center}
-    .hero h1{margin:0 0 8px}
-    .chip{display:inline-block; background:var(--bg); color:var(--muted); border:1px dashed var(--border); padding:2px 8px; border-radius:999px; font-size:12px}
-    .grid{display:grid; grid-template-columns:1fr; gap:16px}
-    @media (min-width:900px){.grid{grid-template-columns: 280px 1fr}}
-    .toc{background:var(--card); border:1px solid var(--border); border-radius:16px; padding:16px; position:sticky; top:84px}
-    .toc h3{margin-top:0}
-    .toc a{display:block; padding:6px 8px; border-radius:8px; color:var(--muted); text-decoration:none}
-    .toc a:hover{background:color-mix(in oklab, var(--card), var(--ink) 8%); color:var(--ink)}
-    section{background:var(--card); border:1px solid var(--border); border-radius:16px; padding:20px}
-    h2{margin:.2em 0 .6em;}
-    h3{margin:1.2em 0 .4em}
-    ul,ol{margin:0 0 1em 1.2em}
-    .note{border-left:4px solid var(--accent); padding:8px 12px; background:color-mix(in oklab, var(--card), var(--accent) 3%); border-radius:8px}
-    .warn{border-left:4px solid var(--warn); background:color-mix(in oklab, var(--card), var(--warn) 6%)}
-    code.kbd{font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background:color-mix(in oklab, var(--card), var(--ink) 8%); padding:2px 6px; border-radius:6px; font-weight:700}
-    footer{color:var(--muted); text-align:center; padding:24px}
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>もふメモ | 使い方（HOW TO）</title>
+<meta name="description" content="もふメモの使い方。/ 補完・レース検索・編集・エクスポート/インポート・Google Drive 同期まで。" />
+<style>
+:root{
+  --bg:#fafaf9; --card:#ffffff; --fg:#0f172a; --muted:#6b7280; --line:#e5e7eb;
+  --brand:#2563eb; --brand-weak:#eff6ff; --ok:#10b981; --warn:#f59e0b; --danger:#ef4444;
+  --radius:16px; --shadow:0 12px 28px rgba(15,23,42,.08);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+  color:var(--fg);
+  background:
+    radial-gradient(1200px 600px at 20% -10%, rgba(37,99,235,.06), transparent 60%),
+    radial-gradient(900px 500px at 100% -10%, rgba(16,185,129,.06), transparent 55%),
+    var(--bg);
+}
+a{ color:var(--brand); text-decoration:none }
+a:hover{ text-decoration:underline }
+header{
+  position:sticky; top:0; z-index:10; backdrop-filter: saturate(120%) blur(8px);
+  background:color-mix(in oklab, var(--card) 92%, transparent);
+  border-bottom:1px solid var(--line);
+}
+.hbar{ max-width:980px; margin:0 auto; padding:14px 14px; display:flex; gap:.6rem; align-items:center; flex-wrap:wrap }
+.title{ font-weight:800; letter-spacing:.2px; display:flex; align-items:center; gap:.4rem }
+.title small{
+  font-size:.7rem; color:var(--brand);
+  border:1px solid color-mix(in oklab, var(--brand) 50%, var(--line));
+  border-radius:999px; padding:.05rem .45rem; margin-left:.25rem
+}
+main{ max-width:980px; margin:18px auto 56px; padding:0 14px; display:grid; gap:16px }
+.card{
+  background:var(--card); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow);
+  padding:18px
+}
+h2{ font-size:1.25rem; margin:.1rem 0 .8rem }
+h3{ font-size:1.05rem; margin:1.0rem 0 .6rem }
+p{ line-height:1.75; margin:.55rem 0 }
+ul{ margin:.4rem 0 .8rem 1.2rem }
+code, .kbd{
+  font-family:ui-monospace,Menlo,monospace; background:color-mix(in oklab, var(--card) 88%, transparent);
+  border:1px solid var(--line); border-radius:.35rem; padding:.1rem .35rem; font-size:.95em
+}
+.badge{ display:inline-flex; gap:.35rem; align-items:center; padding:.2rem .5rem; border:1px solid var(--line); border-radius:999px; background:var(--card); font-size:.85rem }
+.ok{ color:var(--ok) } .warn{ color:var(--warn) } .danger{ color:var(--danger) }
+.grid{ display:grid; gap:12px }
+.cols-2{ grid-template-columns:repeat(2,minmax(0,1fr)) }
+.hr{ height:1px; background:var(--line); margin:12px 0 }
+.tip{ background:var(--brand-weak); border:1px solid color-mix(in oklab, var(--brand) 40%, var(--line)); border-radius:12px; padding:10px 12px; color:#1f2937 }
+.small{ color:var(--muted); font-size:.92rem }
+kbd.k{ border:1px solid var(--line); background:#fff; padding:.05rem .35rem; border-radius:.3rem; box-shadow:inset 0 -1px 0 #eee }
+@media (max-width:860px){ .cols-2{ grid-template-columns:1fr } }
+</style>
 </head>
 <body>
-  <header>
-    <nav class="nav" role="navigation" aria-label="もふメモ メインナビ">
-      <div class="brand">🐾 もふメモ</div>
-      <span class="spacer"></span>
-      <!-- リンクはサイト構成に合わせて適宜編集してください -->
-      <a class="btn btn-accent" href="https://keirinjingle.github.io/keirin-links/donation.html" target="_blank" rel="noopener">寄付！</a>
-      <a class="btn" href="index.html">戻る（メイン）</a>
-      <a class="btn" href="#google-connect">Google接続</a>
-      <a class="btn" href="#settings">設定</a>
-    </nav>
-  </header>
+<header>
+  <div class="hbar">
+    <div class="title">🐾 もふメモ <small>HOW TO</small></div>
+    <span class="badge">バージョン <strong>MVP2</strong></span>
+  </div>
+</header>
 
-  <div class="container">
-    <div class="hero" role="region" aria-label="もふメモの紹介">
-      <div style="flex:1">
-        <h1>もふメモの使い方（How To）</h1>
-        <div class="chip">最短1分でスタート / オフライン保存 &amp; Google Drive 同期対応</div>
-        <p style="margin:.8em 0 0; color:var(--muted)">このページでは、基本操作、補完の使い方、同期、寄付、FAQまでをコンパクトに説明します。</p>
+<main>
+  <!-- 概要 -->
+  <section class="card">
+    <h2>このページについて</h2>
+    <p>
+      「もふメモ」は、<strong>ローカル保存</strong>を基本に、<strong>/ 補完</strong>（戦法・選手・当日レース・タグ）、<strong>レース検索</strong>（当日カードから）、<strong>全文検索</strong>、<strong>NDJSON エクスポート/インポート</strong>、そして<strong>Google Drive（App Folder）同期</strong>を備えたシンプルな競輪用メモアプリです。
+    </p>
+    <p class="small">動作はブラウザのみ。データはあなたの端末に保存され、Google 接続時のみ App Data Folder に同期されます。</p>
+  </section>
+
+  <!-- クイックスタート -->
+  <section class="card">
+    <h2>クイックスタート（最短 30 秒）</h2>
+    <ol>
+      <li>テキスト欄に <code>- 函館6R 先行注意 /まくり +展開 @山田太郎</code> のように入力。</li>
+      <li><strong>「登録」</strong>でカード化。1行目は「作成日時（編集日時）」、2行目に<strong>レース名 + [出走表]/[結果]</strong>リンクが並びます。</li>
+      <li><span class="small">出走表リンクは保存時に自動で推定・固定されます（翌日以降も残ります）。</span></li>
+    </ol>
+    <div class="tip">ヒント：<code>/</code> を打つと補完メニューが開きます。候補は「当日レース → 戦法 → 選手 → タグ」の順に表示。</div>
+  </section>
+
+  <!-- 入力ルール -->
+  <section class="card">
+    <h2>入力ルール（覚えるのは 4 つだけ）</h2>
+    <div class="grid cols-2">
+      <div>
+        <h3>1) レース表記</h3>
+        <p>先頭行に <code>- 会場名◯R</code> を置くと、カード表示でその行は自動で省略され、代わりに上部に<strong>レース名とリンク</strong>が出ます。</p>
+        <p>例）<code>- 弥彦1R</code>（保存時に当日カードから出走表 URL を固定）</p>
+      </div>
+      <div>
+        <h3>2) 戦法</h3>
+        <p><code>#三分戦 #二分戦 #単騎 #先行一車 #まくり #差し #カマシ #自在</code> など。<code>/</code>補完から選ぶだけ。</p>
+      </div>
+      <div>
+        <h3>3) 選手</h3>
+        <p>選手は <code>@氏名</code>。選手 DB を読み込むので <code>/</code>補完から正確な表記を選べます。</p>
+      </div>
+      <div>
+        <h3>4) タグ</h3>
+        <p><code>+展開 +抑え +課題</code> など任意。全文検索でヒットします。</p>
       </div>
     </div>
+  </section>
 
-    <div class="grid" style="margin-top:16px">
-      <aside>
-        <div class="toc" aria-label="目次">
-          <h3>目次</h3>
-          <a href="#flow">基本の流れ</a>
-          <a href="#storage">データの保存先</a>
-          <a href="#menu">上部メニューの機能</a>
-          <a href="#completion">補完機能の例</a>
-          <a href="#notes">注意点</a>
-          <a href="#faq">よくある質問（FAQ）</a>
-        </div>
-      </aside>
+  <!-- 補完とレース検索 -->
+  <section class="card">
+    <h2>/ 補完 & レース検索</h2>
+    <h3>/ 補完（テキスト欄）</h3>
+    <ul>
+      <li><kbd class="k">/</kbd> でメニューを開く → 矢印キーで移動 → <kbd class="k">Enter</kbd> 決定。</li>
+      <li>PC/スマホともに IME 確定直後の誤決定を防ぐ調整済み。長押しスクロール時はタップ確定になりません。</li>
+    </ul>
+    <h3>レース検索（<strong>レース内検索</strong>タブ）</h3>
+    <ol>
+      <li>「レース検索」ボタンまたは <kbd class="k">Ctrl</kbd>/<kbd class="k">⌘</kbd>+<kbd class="k">K</kbd>。</li>
+      <li>当日の全会場から <strong>「会場名 + R 番号」</strong>で候補を表示（例：<code>函館 6R</code>）。</li>
+      <li>候補をクリック → 出走表と選手一覧を表示。</li>
+      <li>選手をクリックすると「@選手 の過去メモ」と「その選手のテンプレ」が出ます。</li>
+      <li>編集画面を開いている場合、<strong>「挿入」</strong>ボタンになり、編集テキストに追記。未編集なら新規登録。</li>
+    </ol>
+    <p class="small">※ 結果リンクはデータにあれば出ます。無ければ出走表のみ。</p>
+  </section>
 
-      <main>
-        <section id="flow" aria-labelledby="flow-heading">
-          <h2 id="flow-heading">基本の流れ</h2>
-          <ol>
-            <li>
-              <strong>メモを入力</strong><br>
-              画面のテキストフィールドに自由に入力できます。
-              <div class="note" style="margin-top:8px">
-                ヒント：<code class="kbd">/</code> で補完を開けます（選手／当日レース／戦法／タグ）。
-              </div>
-            </li>
-            <li style="margin-top:0.6em">
-              <strong>補足記号</strong><br>
-              戦法は「<code class="kbd">#三分戦</code>」のように <strong>#</strong> を付ける、タグは「<code class="kbd">+メモ</code>」のように <strong>+</strong> を付けて入力。
-            </li>
-            <li style="margin-top:0.6em">
-              <strong>保存</strong><br>
-              入力後、［登録］ボタンを押すとメモが保存されます。
-            </li>
-          </ol>
-        </section>
+  <!-- 編集・削除・挿入 -->
+  <section class="card">
+    <h2>編集・削除・検索からの挿入</h2>
+    <ul>
+      <li>各カード右上の「編集 / 削除」。</li>
+      <li>編集画面は TOP と同じテキスト欄（サジェスト付き）を使います。</li>
+      <li>レース検索→選手から作ったテキストは、<strong>編集中なら「挿入」</strong>、未編集なら<strong>「登録」</strong>で新しいカードに。</li>
+    </ul>
+    <div class="tip">「表示」リンク（全文検索の結果）から、該当カード位置へスクロールします。</div>
+  </section>
 
-        <section id="storage" aria-labelledby="storage-heading">
-          <h2 id="storage-heading">データの保存先</h2>
-          <ul>
-            <li>データはまず <strong>端末内</strong> に保存されます（オフラインOK）。</li>
-            <li>上部メニューの <strong>Google接続</strong> を行うと、Google Drive の <strong>App Folder</strong> に自動同期され、複数端末で共有できます。</li>
-          </ul>
-          <p class="note" id="google-connect" style="margin-top:8px">初回のみ Google へのログイン＆同意が必要です。App Folder はアプリ専用フォルダで、通常の Drive 画面からは直接見えません。</p>
-        </section>
-
-        <section id="menu" aria-labelledby="menu-heading">
-          <h2 id="menu-heading">上部メニューの機能</h2>
-          <ul>
-            <li>
-              <strong>寄付！</strong> — 気に入ったらぜひ応援をお願いします。<br>
-              <a class="btn btn-accent" href="https://keirinjingle.github.io/keirin-links/donation.html" target="_blank" rel="noopener">コーヒー一杯ぶんの寄付はこちら ☕</a>
-            </li>
-            <li style="margin-top:.6em"><strong>Google接続</strong> — Google アカウントにログインし、Drive に同期できます。</li>
-            <li style="margin-top:.6em" id="settings"><strong>設定</strong> — サウンドや通知など、アプリの動作を調整できます。</li>
-            <li style="margin-top:.6em"><strong>ログアウト</strong> — Google アカウント接続を解除します。</li>
-          </ul>
-        </section>
-
-        <section id="completion" aria-labelledby="completion-heading">
-          <h2 id="completion-heading">補完機能の例</h2>
-          <ul>
-            <li><code class="kbd">/</code> → 選手リストやレース一覧を呼び出す</li>
-            <li><code class="kbd">#</code> → 戦法（例：<code class="kbd">#三分戦</code>）</li>
-            <li><code class="kbd">+</code> → タグ（例：<code class="kbd">+重要</code>、<code class="kbd">+メモ</code>）</li>
-          </ul>
-        </section>
-
-        <section id="notes" aria-labelledby="notes-heading">
-          <h2 id="notes-heading">注意点</h2>
-          <ul>
-            <li>Drive 同期は最初の 1 回だけログイン操作が必要です。</li>
-            <li>端末のストレージを初期化するとデータは消えます。Google 接続を有効にしていれば再同期できます。</li>
-          </ul>
-        </section>
-
-        <section id="faq" aria-labelledby="faq-heading">
-          <h2 id="faq-heading">よくある質問（FAQ）</h2>
-
-          <h3>Q. データが消えることはありますか？</h3>
-          <p>端末の初期化などを行うと端末内データは消えます。Google Drive に接続していれば、再同期で復元できます。</p>
-
-          <h3>Q. 複数端末で使えますか？</h3>
-          <p>Google 接続を有効にすれば、同一アカウントで共有可能です。</p>
-
-          <h3>Q. メモは誰かに見られますか？</h3>
-          <p>保存先は自分の端末と Google Drive の専用フォルダのみです（共有設定を行わない限り第三者からは見えません）。</p>
-        </section>
-
-        <section aria-labelledby="footer-note">
-          <h2 id="footer-note">ひとこと</h2>
-          <p>「もふメモ」は、<strong>シンプルに残したいことをすぐ記録できる</strong> メモアプリです。思いつきも、レース情報も、気軽に書き留めてください🐾</p>
-        </section>
-      </main>
+  <!-- 同期 -->
+  <section class="card">
+    <h2>Google Drive 同期（App Data Folder）</h2>
+    <p>「設定 → <strong>Googleログイン</strong>」で接続すると、<code>mofu_entries.ndjson</code> を App Data Folder に自動同期します。</p>
+    <div class="grid cols-2">
+      <div>
+        <h3>初回のみ：向きの選択</h3>
+        <ol>
+          <li>ローカルとサーバーの件数・最終更新を比較表示。</li>
+          <li><strong>ローカル→サーバーに上書き</strong> か <strong>サーバー→ローカルに上書き</strong> を選択。</li>
+          <li>以後は<strong>自動マージ</strong>（ID単位に更新時刻の新しい方を採用）で同期されます。</li>
+        </ol>
+      </div>
+      <div>
+        <h3>ふるまい</h3>
+        <ul>
+          <li>右上に「<span class="badge">同期 <span>YYYY-MM-DD HH:MM</span></span>」バッジ（最後に成功した時刻）。</li>
+          <li>保存のたびにデバウンスして保存 → 15 秒ごとに差分ポーリング。</li>
+          <li>ログイン状態はブラウザをリロードしても<strong>維持</strong>（有効期限が近いときのみ静かに更新）。</li>
+          <li>「設定 → <strong>Googleログアウト</strong>」で解除できます。</li>
+        </ul>
+      </div>
     </div>
+    <div class="hr"></div>
+    <p class="small">※ App Data Folder は通常のマイドライブ一覧には出ません。アプリ専用の非公開領域です。</p>
+  </section>
 
-    <footer>
-      © 2025 もふメモ / Keirin Jingle
-    </footer>
-  </div>
+  <!-- エクスポート/インポート -->
+  <section class="card">
+    <h2>エクスポート / インポート（NDJSON）</h2>
+    <ul>
+      <li><strong>設定 → エクスポート</strong>：1 行 1 レコードの NDJSON をダウンロード。</li>
+      <li><strong>設定 → インポート</strong>：NDJSON を読み込み。既存 ID はスキップ、新規のみ追加。</li>
+      <li>インポート後は自動で同期対象にも反映されます。</li>
+    </ul>
+  </section>
+
+  <!-- 検索 -->
+  <section class="card">
+    <h2>検索</h2>
+    <h3>全文検索</h3>
+    <ul>
+      <li><kbd class="k">Ctrl</kbd>/<kbd class="k">⌘</kbd>+<kbd class="k">K</kbd> → <strong>全文検索</strong>タブ。</li>
+      <li>単純な <code>raw.includes</code> です。<code>@氏名</code> や <code>+タグ</code> もヒットします。</li>
+    </ul>
+    <h3>レース内検索</h3>
+    <ul>
+      <li>当日の会場・R番号で候補（最大100）。選手をクリック→過去メモとテンプレ。</li>
+    </ul>
+  </section>
+
+  <!-- よくある質問 -->
+  <section class="card">
+    <h2>よくある質問（FAQ）</h2>
+    <h3>Q. 出走表の URL は翌日消えますか？</h3>
+    <p>A. 消えません。保存時に推定された URL を<strong>カードに固定</strong>しており、翌日以降も表示されます。</p>
+
+    <h3>Q. 同期バッジが出ない / 時刻が「—」のまま</h3>
+    <p>A. Google ログイン後に一度でも同期が成功すると時刻が表示されます。初回の<strong>向き選択</strong>を完了してください。</p>
+
+    <h3>Q. ログインを解除したい</h3>
+    <p>A. 右上の「設定 → <strong>Googleログアウト</strong>」。トークンは破棄され、ポーリングも停止します。</p>
+
+    <h3>Q. プライベートモードで保存できない</h3>
+    <p>A. ブラウザの制限で <code>localStorage</code> が使えない場合があります。その際は警告が出ます。通常モードでの利用を推奨します。</p>
+
+    <h3>Q. 選手名の IME 確定で候補をタップしづらい</h3>
+    <p>A. 誤確定を避ける調整は入っていますが、確定直後は一拍おいてタップすると安定します（スマホ）。</p>
+  </section>
+
+  <!-- キーボードショートカット -->
+  <section class="card">
+    <h2>キーボードショートカット</h2>
+    <ul>
+      <li><kbd class="k">/</kbd> … 補完メニューを開く</li>
+      <li><kbd class="k">↑/↓</kbd> + <kbd class="k">Enter</kbd> … 候補の決定</li>
+      <li><kbd class="k">Ctrl</kbd>/<kbd class="k">⌘</kbd> + <kbd class="k">K</kbd> … 検索ダイアログ</li>
+    </ul>
+  </section>
+
+  <!-- 表示仕様のメモ -->
+  <section class="card">
+    <h2>カード表示の仕様</h2>
+    <ul>
+      <li>1行目：<strong>投稿時刻（編集時刻）</strong>を JST 表示（例：<code>2025-10-07 19:35（編集 2025-10-07 19:40）</code>）。</li>
+      <li>2行目：<strong>レース名（例：弥彦1R）＋ [出走表]/[結果]</strong>リンクを右側に。</li>
+      <li>本文：先頭行が <code>- 会場名◯R</code> の場合、その行は表示上のみ省略（保存データは保持）。</li>
+      <li>本文内の URL は自動リンク化。<code>@選手</code> / <code>+タグ</code> クリックで全文検索へジャンプ。</li>
+    </ul>
+  </section>
+
+  <!-- セキュリティ & データ -->
+  <section class="card">
+    <h2>データとプライバシー</h2>
+    <ul>
+      <li>ローカル保存が基本。Google 接続時のみ App Data Folder に NDJSON を保存します。</li>
+      <li>App Data Folder は通常のマイドライブに表示されません（アプリだけがアクセス）。</li>
+      <li>同期は ID 単位で<strong>更新時刻の新しい方が勝ち</strong>のマージです。</li>
+    </ul>
+  </section>
+
+  <section class="card small">
+    <p>© 2025 もふメモ / keirinjingle</p>
+  </section>
+</main>
 </body>
 </html>
