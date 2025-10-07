@@ -292,6 +292,35 @@ input[type="text"]:focus{
   .btn, .btn-link{ padding:.5rem .75rem; border-radius:10px }
 }
 
+/* ========== ページネーション ========== */
+.sel{
+  background:var(--card); color:var(--fg);
+  border:1px solid var(--line); border-radius:.6rem;
+  padding:.45rem .6rem; outline:none;
+  transition:border-color .18s ease, box-shadow .18s ease;
+}
+.sel:focus{
+  border-color:color-mix(in oklab, var(--brand) 45%, var(--line));
+  box-shadow:0 0 0 3px color-mix(in oklab, var(--brand) 20%, transparent);
+}
+
+.pager{
+  display:flex; gap:.35rem; justify-content:center; align-items:center;
+  flex-wrap:wrap; margin:14px 0 20px;
+}
+.pager .pp{
+  appearance:none; cursor:pointer; user-select:none;
+  border:1px solid var(--line); background:var(--card); color:var(--fg);
+  padding:.45rem .7rem; border-radius:10px; font-size:.95rem;
+  box-shadow:var(--shadow-sm);
+}
+.pager .pp[disabled]{ opacity:.5; cursor:default }
+.pager .pp.is-current{
+  border-color:color-mix(in oklab, var(--brand) 45%, var(--line));
+  background:color-mix(in oklab, var(--brand) 10%, var(--card));
+  font-weight:700;
+}
+.pager .dots{ padding:.45rem .4rem; color:var(--muted) }
 
 
 </style>
@@ -328,6 +357,16 @@ input[type="text"]:focus{
     <button id="inlineSlash" class="btn" title="/ を挿入">/</button>
     <button id="openSearch" class="btn" title="Ctrl/Cmd+K でも開けます">レース検索</button>
     <button id="addBtn" class="btn btn-primary">登録</button>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:.5rem">
+    <label for="pageSize" class="small muted">表示</label>
+    <select id="pageSize" class="sel">
+      <option value="10">10件</option>
+      <option value="20" selected>20件</option>
+      <option value="50">50件</option>
+      <option value="100">100件</option>
+    </select>
+  </div>
+
   </div>
 
   <div id="taWrap" style="position:relative">
@@ -336,6 +375,8 @@ input[type="text"]:focus{
   </div>
 
   <section id="cards" class="cards"></section>
+    <div id="pager" class="pager" style="display:none"></div>
+
 
   <div class="footer">データはローカル保存。Google接続で Drive(App Folder) 同期が使えます。</div>
 </main>
@@ -433,6 +474,67 @@ input[type="text"]:focus{
 </dialog>
 
 <script>
+// ▼ ページネーション
+const KEY_PAGE_SIZE = 'mofu:list:pageSize';
+let pageSize = Number(localStorage.getItem(KEY_PAGE_SIZE)) || 20;
+let currentPage = 1;
+const pagerEl = document.getElementById('pager');
+const pageSizeSel = document.getElementById('pageSize');
+if (pageSizeSel) pageSizeSel.value = String(pageSize);
+if (pageSizeSel) pageSizeSel.addEventListener('change', ()=>{
+  const v = parseInt(pageSizeSel.value, 10);
+  if (!Number.isFinite(v) || v <= 0) return;
+  pageSize = v;
+  localStorage.setItem(KEY_PAGE_SIZE, String(pageSize));
+  currentPage = 1;                       // 件数変更時は先頭ページへ
+  renderList();
+});
+
+function makePageWindow(totalPages, cur){
+  const pages = [];
+  const around = 2;
+  pages.push(1);
+  let s = Math.max(2, cur - around);
+  let e = Math.min(totalPages - 1, cur + around);
+  if (s > 2) pages.push('...');
+  for (let p = s; p <= e; p++) pages.push(p);
+  if (e < totalPages - 1) pages.push('...');
+  if (totalPages > 1) pages.push(totalPages);
+  return pages;
+}
+
+function renderPager(totalItems, totalPages){
+  if (!pagerEl) return;
+  if (totalPages <= 1){
+    pagerEl.style.display = 'none';
+    pagerEl.innerHTML = '';
+    return;
+  }
+  pagerEl.style.display = 'flex';
+  const win = makePageWindow(totalPages, currentPage);
+  const prevDis = currentPage === 1 ? 'disabled' : '';
+  const nextDis = currentPage === totalPages ? 'disabled' : '';
+  const parts = [];
+  parts.push(`<button class="pp" data-p="${currentPage-1}" ${prevDis}>← 前へ</button>`);
+  for (const x of win){
+    if (x === '...'){ parts.push(`<span class="dots">…</span>`); continue; }
+    const cur = (x === currentPage) ? 'is-current' : '';
+    parts.push(`<button class="pp ${cur}" data-p="${x}">${x}</button>`);
+  }
+  parts.push(`<button class="pp" data-p="${currentPage+1}" ${nextDis}>次へ →</button>`);
+  pagerEl.innerHTML = parts.join('');
+
+  pagerEl.onclick = (e)=>{
+    const b = e.target.closest('button.pp'); if(!b || b.disabled) return;
+    const p = parseInt(b.dataset.p, 10);
+    if (!Number.isFinite(p)) return;
+    currentPage = Math.max(1, Math.min(totalPages, p));
+    renderList();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+}
+
+
 const DRIVE_FILENAME='mofu_entries.ndjson';
 let tokenClient=null, accessToken=null, driveFileId=null;
 
@@ -817,8 +919,8 @@ function addEntry(raw, entities=null){
   const nowIso = new Date().toISOString();
   const entry = {
     id: Date.now().toString(36)+Math.random().toString(16).slice(2),
-    created_at: nowIso,             // ← 新規
-    updated_at: nowIso,             // ← 新規
+    created_at: nowIso,
+    updated_at: nowIso,
     raw
   };
 
@@ -834,22 +936,27 @@ function addEntry(raw, entities=null){
   entry.entities = entry.entities || {};
   entry.entities.race = entry.entities.race || {};
 
-  // 3) 初回保存時に entry_url/result_url を“固定”してしまう（以後は表示にこれを優先）
+  // 3) 初回保存時に entry_url/result_url を“固定”
   if (!entry.entities.race.entry_url && (raceGuess?.entry || urlInText)){
-    entry.entities.race.entry_url  = raceGuess?.entry || urlInText || null;
-    entry.entities.race.result_url = raceGuess?.result || null;
-    entry.entities.race.venue      = raceGuess?.venue || entry.entities.race.venue || null;
-    entry.entities.race.race_number= raceGuess?.raceNo || entry.entities.race.race_number || null;
-    entry.entities.race.date       = (raceGuess?.date||'').replace(/-/g,'') || entry.entities.race.date || ymdJST();
+    entry.entities.race.entry_url   = raceGuess?.entry || urlInText || null;
+    entry.entities.race.result_url  = raceGuess?.result || null;
+    entry.entities.race.venue       = raceGuess?.venue || entry.entities.race.venue || null;
+    entry.entities.race.race_number = raceGuess?.raceNo || entry.entities.race.race_number || null;
+    entry.entities.race.date        = (raceGuess?.date||'').replace(/-/g,'') || entry.entities.race.date || ymdJST();
   }
 
   const arr = loadEntries().slice();
   arr.push(entry);
+
+  // ✅ 新規追加後は1ページ目へ
+  currentPage = 1;
+
   const ok = saveEntries(arr);
   renderList(arr);
   scheduleDriveSave();
   if (!ok) alert('注意：この環境では保存が制限されている可能性があります（プライベートモード等）。');
 }
+
 
 function updateEntry(id, newRaw){
   const arr = loadEntries().slice();
@@ -930,57 +1037,65 @@ function linkifyRaw(html){
 function renderList(listOverride){
   const el = document.getElementById('cards');
   const src = (listOverride ?? loadEntries());
-  const list = src.slice().reverse();
 
-  let upgraded = false; // 当日カードからURL推定→固定保存したかどうか
+  // --- 事前パス：固定URLの付与（全件対象） ---
+  let upgraded = false;
+  for (const e of src){
+    const hasFixed = !!(e.entities?.race?.entry_url);
+    if (hasFixed) continue;
+    const race = parseRaceFromRaw(e.raw||'');
+    if (race && race.entry){
+      e.entities = e.entities || {};
+      e.entities.race = e.entities.race || {};
+      e.entities.race.entry_url   = race.entry || null;
+      e.entities.race.result_url  = race.result || null;
+      e.entities.race.venue       = race.venue || null;
+      e.entities.race.race_number = race.raceNo || null;
+      e.entities.race.date        = (race.date||'').replace(/-/g,'') || ymdJST();
+      upgraded = true;
+    }
+  }
+  if (upgraded){ saveEntries(src); scheduleDriveSave(); }
 
-  const html = list.map(e=>{
+  // --- 並び替え（新しい順） ---
+  const all = src.slice().reverse();
+
+  // --- ページ計算 ---
+  const totalItems = all.length;
+  const size = Math.max(1, pageSize|0);
+  const totalPages = Math.max(1, Math.ceil(totalItems / size));
+  if (currentPage > totalPages) currentPage = totalPages;
+  const start = (currentPage - 1) * size;
+  const pageItems = all.slice(start, start + size);
+
+  // --- ページのカードを組み立て ---
+  const html = pageItems.map(e=>{
     const created = e.created_at || e.at || null;
     const updated = e.updated_at || null;
 
-    // 固定保存されたURL（最優先）
     const fixedEntryUrl  = e.entities?.race?.entry_url  || e.race?.entry_url  || null;
     const fixedResultUrl = e.entities?.race?.result_url || e.race?.result_url || null;
 
-    // レース表記（例: 弥彦1R）
     let raceLabel = (e.entities?.race?.venue && e.entities?.race?.race_number)
       ? `${e.entities.race.venue}${e.entities.race.race_number}R`
       : null;
 
-    // 動的推定（保険）→ 固定保存へ昇格
+    // “保険”の動的推定（表示時のみ）
     let entryUrl  = fixedEntryUrl;
     let resultUrl = fixedResultUrl;
     if (!entryUrl || !raceLabel){
       const race = parseRaceFromRaw(e.raw||'');
       if (race){
         raceLabel = raceLabel || `${race.venue}${race.raceNo}R`;
-        if (!entryUrl && race.entry){
-          entryUrl  = race.entry;
-          resultUrl = race.result || resultUrl;
-
-          const orig = src.find(x=>x.id===e.id);
-          if (orig){
-            orig.entities = orig.entities || {};
-            orig.entities.race = orig.entities.race || {};
-            if (!orig.entities.race.entry_url){
-              orig.entities.race.entry_url   = entryUrl || null;
-              orig.entities.race.result_url  = resultUrl || null;
-              orig.entities.race.venue       = race.venue || null;
-              orig.entities.race.race_number = race.raceNo || null;
-              orig.entities.race.date        = (race.date||'').replace(/-/g,'') || ymdJST();
-              upgraded = true;
-            }
-          }
-        }
+        entryUrl  = entryUrl  || race.entry || null;
+        resultUrl = resultUrl || race.result || null;
       }
     }
 
-    // 1行目：作成（編集）
     const createdText  = created ? fmtJst(created) : ymd_dash();
     const editedSuffix = (updated && updated !== created) ? `（編集 ${fmtJst(updated)}）` : '';
     const headText     = `${createdText}${editedSuffix}`;
 
-    // 2行目：レースR + URL（右隣）
     const raceLine = (raceLabel || entryUrl || resultUrl) ? `
       <div class="small" style="margin:.15rem 0 .35rem; display:flex; gap:.5rem; align-items:center; flex-wrap:wrap;">
         ${raceLabel ? `<strong>${raceLabel}</strong>` : ''}
@@ -989,15 +1104,13 @@ function renderList(listOverride){
       </div>
     ` : '';
 
-    // 本文：先頭が「- レースR」なら、その行を表示からだけ削除（保存データは触らない）
     let bodyText = (e.raw || '');
     if (raceLabel){
-      const pattern = new RegExp(`^\\s*-\\s*${raceLabel}\\s*\\n?`); // 例: "- 弥彦1R\n"
+      const pattern = new RegExp(`^\\s*-\\s*${raceLabel}\\s*\\n?`);
       bodyText = bodyText.replace(pattern, '');
     }
     const rawHtml = linkifyRaw(bodyText.replace(/</g,'&lt;'));
 
-    // 右側のアクション
     const actions = `<div style="margin-left:auto;display:flex;gap:.6rem">
         <a class="linklike editBtn" href="#/edit/${e.id}" data-id="${e.id}">編集</a>
         <button class="linklike delBtn" data-id="${e.id}">削除</button>
@@ -1015,11 +1128,10 @@ function renderList(listOverride){
 
   el.innerHTML = html;
 
-  if (upgraded){
-    saveEntries(src);
-    scheduleDriveSave();
-  }
+  // --- ページャ描画 ---
+  renderPager(totalItems, totalPages);
 }
+
 
 
 /* 編集・削除・リンクで検索 */
@@ -1097,13 +1209,27 @@ function runSearch(){
   document.getElementById('searchList').innerHTML=html;
   document.getElementById('searchCount').textContent=`${hits.length} 件`;
 
+  // ▼ クリックで該当ページへ自動ジャンプ
   document.getElementById('searchList').onclick = (e)=>{
     const btn=e.target.closest('.openCardBtn'); if(!btn) return;
     const id=btn.dataset.id; searchDlg.close();
-    const node=document.getElementById('card_'+id);
-    if(node){ node.scrollIntoView({behavior:'smooth', block:'center'}); }
+
+    // 逆順リストで位置を特定してページを決定
+    const all = loadEntries().slice().reverse();
+    const idx = all.findIndex(x=>x.id===id);
+    if (idx >= 0){
+      currentPage = Math.floor(idx / Math.max(1, pageSize|0)) + 1;
+    }
+    renderList();
+
+    // スクロール
+    setTimeout(()=>{
+      const node=document.getElementById('card_'+id);
+      if(node){ node.scrollIntoView({behavior:'smooth', block:'center'}); }
+    }, 0);
   };
 }
+
 
 
 /* ========== レース内検索 ========== */
