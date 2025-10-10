@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>もふメモ｜バックアップ履歴（DL専用・緊急用）</title>
+
+<!-- ▼あなたの Client ID（.apps.googleusercontent.com で終わる）に置き換え -->
+<meta name="mofu:google-client-id" content="451004577569-euhu5f661onevj9a0tlsfr9i4jntm6jm.apps.googleusercontent.com">
+
+<!-- Google Identity Services -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+
+<style>
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans JP",sans-serif;margin:0;padding:24px;background:#0b0b0b;color:#eaeaea}
+  h1{font-size:1.1rem;margin:0 0 12px}
+  .row{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+  button{cursor:pointer;border:1px solid #2a2a2a;background:#151515;color:#eaeaea;border-radius:10px;padding:.5rem .8rem}
+  button:disabled{opacity:.6;cursor:default}
+  code{background:#151515;border:1px solid #2a2a2a;border-radius:6px;padding:.15rem .35rem}
+  table{width:100%;border-collapse:collapse;margin-top:10px}
+  th,td{padding:.55rem .4rem;border-bottom:1px solid #1e1e1e;text-align:left}
+  .right{text-align:right}
+  .muted{opacity:.75}
+  .ok{color:#79e0a8}
+  .err{color:#f78c8c}
+  .note{font-size:.9rem;opacity:.8}
+  .wrap{max-width:920px;margin:0 auto}
+  .bar{display:flex;gap:.6rem;align-items:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="bar" style="justify-content:space-between;margin-bottom:8px">
+    <h1>📁 もふメモ｜バックアップ履歴（ダウンロード専用）</h1>
+    <div class="note">※ Drive <code>appDataFolder</code> の <code>mofu_entries.ndjson</code> だけを扱います</div>
+  </div>
+
+  <div class="row">
+    <button id="loginBtn">Google ログイン</button>
+    <button id="loadBtn" disabled>履歴を読み込む</button>
+    <span id="stat" class="muted">未ログイン</span>
+  </div>
+
+  <div id="fileMeta" class="muted"></div>
+
+  <table id="revTable" hidden>
+    <thead>
+      <tr>
+        <th>#</th><th>日時</th><th>サイズ</th><th>種別</th><th class="right">操作</th>
+      </tr>
+    </thead>
+    <tbody id="revRows"></tbody>
+  </table>
+
+  <p class="note" style="margin-top:18px">
+    ログイン → <b>履歴を読み込む</b> → 任意の行の <b>ダウンロード</b> を押すと <code>.ndjson</code> を保存します。<br>
+    復元（ローカル書き戻し）はこのツールでは行いません。
+  </p>
+</div>
+
+<script>
+(() => {
+  // ===== 設定 =====
+  const FILE_NAME = 'mofu_entries.ndjson';
+  const SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
+
+  // ===== 参照 =====
+  const $ = (id)=>document.getElementById(id);
+  const loginBtn = $('loginBtn');
+  const loadBtn  = $('loadBtn');
+  const statEl   = $('stat');
+  const fileMeta = $('fileMeta');
+  const table    = $('revTable');
+  const rowsEl   = $('revRows');
+
+  // ===== 状態 =====
+  let tokenClient = null;
+  let accessToken = null;
+
+  // ===== ユーティリティ =====
+  const CLIENT_ID = (document.querySelector('meta[name="mofu:google-client-id"]')?.content||'').trim();
+  const ok = (m)=>{ statEl.textContent = m; statEl.className='ok'; };
+  const info = (m)=>{ statEl.textContent = m; statEl.className='muted'; };
+  const err = (m)=>{ statEl.textContent = m; statEl.className='err'; };
+
+  const fmtBytes = (n)=>{
+    if(n==null) return '-';
+    const u=['B','KB','MB','GB']; let x=Number(n),i=0;
+    while(x>=1024 && i<u.length-1){ x/=1024; i++; }
+    return (Math.round(x*10)/10)+' '+u[i];
+  };
+  const fmtTime = (s)=>{ try{ return new Date(s).toLocaleString(); }catch{ return s||'-'; } };
+
+  const authHeaders = ()=> ({ 'Authorization': `Bearer ${accessToken}` });
+  const needLogin = ()=> !accessToken;
+
+  async function ensureGIS(){
+    for(let i=0;i<50;i++){
+      if(window.google?.accounts?.oauth2) return;
+      await new Promise(r=>setTimeout(r,100));
+    }
+    throw new Error('GIS load failed');
+  }
+
+  async function login(){
+    await ensureGIS();
+    if(!CLIENT_ID || !CLIENT_ID.endsWith('.apps.googleusercontent.com')){
+      throw new Error('Client ID 未設定');
+    }
+    if(!tokenClient){
+      tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: CLIENT_ID,
+        scope: SCOPE,
+        callback: (resp)=>{
+          if(resp.error){ err('認証失敗'); return; }
+          accessToken = resp.access_token;
+          ok('ログイン済み');
+          loadBtn.disabled = false;
+        }
+      });
+    }
+    tokenClient.requestAccessToken({ prompt:'consent' });
+  }
+
+  async function gjson(url){
+    const r = await fetch(url, { headers: authHeaders() });
+    if(!r.ok) throw new Error('Drive API '+r.status);
+    return await r.json();
+  }
+  async function gtext(url){
+    const r = await fetch(url, { headers: authHeaders() });
+    if(!r.ok) throw new Error('Drive API '+r.status);
+    return await r.text();
+  }
+
+  async function findAppFileByName(name){
+    const q = `name='${name.replace(/'/g,"\\'")}' and trashed=false`;
+    const url = `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=${encodeURIComponent(q)}&fields=files(id,name,modifiedTime,size)`;
+    const j = await gjson(url);
+    return (j.files||[])[0] || null;
+  }
+  async function listRevisions(fileId){
+    const url = `https://www.googleapis.com/drive/v3/files/${fileId}/revisions?fields=revisions(id,modifiedTime,size,keepForever)`;
+    const j = await gjson(url);
+    return j.revisions || [];
+  }
+  async function getLatestText(fileId){
+    const url = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
+    return await gtext(url);
+  }
+  async function getRevisionText(fileId, revId){
+    const url = `https://www.googleapis.com/drive/v3/files/${fileId}/revisions/${revId}?alt=media`;
+    return await gtext(url);
+  }
+  function downloadTextAs(name, text){
+    const blob = new Blob([text], {type:'application/x-ndjson'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a); a.click();
+    setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 0);
+  }
+
+  async function loadRevisions(){
+    if(needLogin()){ alert('先にログインしてください'); return; }
+    info('問い合わせ中…');
+    rowsEl.innerHTML = '';
+    table.hidden = true;
+    fileMeta.textContent = '';
+
+    const f = await findAppFileByName(FILE_NAME);
+    if(!f){
+      err('appDataFolder に対象ファイルがありません');
+      return;
+    }
+    fileMeta.innerHTML = `対象: <code>${f.name}</code> ／ File ID: <code>${f.id}</code> ／ 更新: ${fmtTime(f.modifiedTime)} ／ サイズ: ${fmtBytes(f.size)}`;
+
+    const revs = await listRevisions(f.id);
+    const list = [{ kind:'latest', id:null, modifiedTime:f.modifiedTime, size:f.size }, ...revs.map(r=>({kind:'rev', ...r}))];
+
+    list.forEach((r,i)=>{
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${i+1}</td>
+        <td>${fmtTime(r.modifiedTime) || '-'}</td>
+        <td>${fmtBytes(r.size)}</td>
+        <td>${r.kind==='latest' ? '現在(最新版)' : 'リビジョン'}</td>
+        <td class="right">
+          <button data-rev="${r.id||''}" data-kind="${r.kind}">ダウンロード</button>
+        </td>`;
+      rowsEl.appendChild(tr);
+    });
+    table.hidden = false;
+    ok('取得完了');
+
+    rowsEl.onclick = async (ev)=>{
+      const btn = ev.target.closest('button[data-rev]');
+      if(!btn) return;
+      btn.disabled = true; const old = btn.textContent; btn.textContent='DL中…';
+      try{
+        const revId = btn.getAttribute('data-rev') || null;
+        const text = revId ? await getRevisionText(f.id, revId) : await getLatestText(f.id);
+        const suffix = revId ? ('-rev_'+revId) : '-latest';
+        downloadTextAs(FILE_NAME.replace(/\.ndjson$/, '')+suffix+'.ndjson', text);
+      }catch(e){
+        alert('ダウンロード失敗: '+(e?.message||e));
+      }finally{
+        btn.disabled = false; btn.textContent = old;
+      }
+    };
+  }
+
+  // ===== bind =====
+  loginBtn.onclick = ()=> login().catch(e=>{ err(e.message||String(e)); });
+  loadBtn.onclick  = ()=> loadRevisions().catch(e=>{ err(e.message||String(e)); });
+
+})();
+</script>
+</body>
+</html>
